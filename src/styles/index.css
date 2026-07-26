@@ -521,3 +521,54 @@ tbody tr:hover { background: #fbfcfa; }
   .sales-recent-list em { grid-column: 2; grid-row: 1; }
   .menu-table-tools { align-items: stretch; flex-direction: column; }
 }
+
+/* Deletion PIN protection */
+.security-description { margin: -5px 0 18px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.deletion-pin-card { border-color: #d7e0dc; }
+.deletion-warning { display: flex; align-items: flex-start; gap: 13px; padding: 15px; border-radius: 13px; background: var(--danger-soft); color: var(--danger); }
+.deletion-warning div { display: grid; gap: 5px; }
+.deletion-warning strong { color: #7f3732; font-size: 14px; }
+.deletion-warning p { margin: 0; color: #85524e; font-size: 11px; line-height: 1.55; }
+.deletion-button { background: var(--danger); color: #fff; border-color: var(--danger); }
+.deletion-button:hover { background: #963f39; }
+
+/* Sales table and clearer bill item names */
+.sales-table-selector { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.sales-table-selector select { height: 42px; }
+.sales-cart-line > div:nth-child(2) strong { font-size: 15px; line-height: 1.25; }
+.sales-cart-line > div:nth-child(2) small { font-size: 10px; }
+.sales-cart-line > strong { font-size: 12px; }
+
+/* Ongoing orders */
+.orders-page { gap: 20px; }
+.orders-heading { align-items: center; }
+.orders-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(420px, 0.82fr); gap: 20px; align-items: start; }
+.orders-card-panel { min-width: 0; }
+.orders-card-grid { display: grid; grid-template-columns: repeat(2, minmax(230px, 1fr)); gap: 14px; }
+.ongoing-order-card { border: 1px solid var(--border); border-radius: 17px; background: #fff; color: var(--brand-deep); padding: 17px; display: grid; gap: 18px; text-align: left; transition: 0.18s ease; box-shadow: 0 7px 24px rgba(36,48,43,0.035); }
+.ongoing-order-card:hover { transform: translateY(-2px); border-color: #b9c6c0; box-shadow: 0 12px 28px rgba(36,48,43,0.07); }
+.ongoing-order-card.active { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft), 0 12px 28px rgba(36,48,43,0.07); }
+.ongoing-order-card-top, .ongoing-order-card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ongoing-order-card-top span { color: var(--gold); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; }
+.ongoing-order-card-top strong { font-size: 13px; }
+.ongoing-order-bill { display: grid; gap: 5px; }
+.ongoing-order-bill small { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em; }
+.ongoing-order-bill strong { font-size: 25px; letter-spacing: -0.025em; }
+.ongoing-order-card-bottom { padding-top: 13px; border-top: 1px solid var(--border); }
+.ongoing-order-card-bottom span, .ongoing-order-card-bottom time { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.ongoing-order-card-bottom span { color: #42745a; font-weight: 700; }
+.orders-summary-card { min-height: 650px; }
+.order-status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 999px; background: #e8f2ec; color: #39704e; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.orders-empty-state { min-height: 330px; display: grid; place-items: center; align-content: center; text-align: center; gap: 8px; color: var(--muted); }
+.orders-empty-state h2 { margin: 3px 0 0; color: var(--brand-deep); }
+.orders-empty-state p { margin: 0; font-size: 12px; }
+
+@media (max-width: 1180px) {
+  .orders-layout { grid-template-columns: 1fr; }
+  .orders-summary-card { position: static; min-height: 0; }
+}
+
+@media (max-width: 760px) {
+  .orders-card-grid { grid-template-columns: 1fr; }
+  .ongoing-order-card-bottom { align-items: flex-start; flex-direction: column; }
+}

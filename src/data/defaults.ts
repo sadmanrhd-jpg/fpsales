@@ -73,6 +73,8 @@ export const defaultState: AppState = {
   auditRecords: [],
   menuCategories: sampleMenuCategories,
   menuItems: sampleMenuItems,
+  orders: [],
+  nextOrderNumber: 1,
   settings: {
     restaurantName: 'Food Pavilion',
     branchName: 'Main Branch',

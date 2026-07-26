@@ -13,8 +13,9 @@ import {
   UtensilsCrossed,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { printBillReceipt, printKotReceipt } from '../lib/receipt'
 import { formatCurrency } from '../lib/utils'
-import type { MenuCategory, MenuItem, PaymentMethod, SalesEntry } from '../types'
+import type { MenuCategory, MenuItem, OngoingOrder, OrderLine, PaymentMethod, SalesEntry } from '../types'
 
 interface SalesOrderPageProps {
   categories: MenuCategory[]
@@ -23,7 +24,9 @@ interface SalesOrderPageProps {
   restaurantName: string
   branchName: string
   recentSales: SalesEntry[]
+  nextOrderNumber: number
   canCreate: boolean
+  onCreateOrder: (order: Omit<OngoingOrder, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'status'>) => void
   onCompleteSale: (sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => void
   onNotify: (message: string) => void
 }
@@ -34,33 +37,13 @@ interface CartLine {
 }
 
 const categoryIcons = [Pizza, ShoppingBag, Drumstick, CakeSlice, CupSoda, UtensilsCrossed]
+const tableOptions = Array.from({ length: 20 }, (_, index) => `Table ${String(index + 1).padStart(2, '0')}`)
 
-const escapeHtml = (value: string) => value
-  .replaceAll('&', '&amp;')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;')
-  .replaceAll("'", '&#039;')
-
-function openPrintWindow(title: string, body: string) {
-  const printWindow = window.open('', '_blank', 'width=460,height=720')
-  if (!printWindow) return false
-  printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(title)}</title><style>
-    body{font-family:Arial,sans-serif;color:#111;padding:22px;margin:0}.receipt{max-width:360px;margin:0 auto}
-    h1{font-size:20px;margin:0 0 4px;text-align:center}h2{font-size:14px;margin:0 0 18px;text-align:center;font-weight:400}
-    .meta{font-size:11px;line-height:1.6;border-top:1px dashed #777;border-bottom:1px dashed #777;padding:9px 0;margin-bottom:10px}
-    table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px 0;text-align:left;border-bottom:1px dotted #bbb}th:last-child,td:last-child{text-align:right}
-    .totals{margin-top:12px;font-size:12px}.totals div{display:flex;justify-content:space-between;padding:4px 0}.totals .grand{font-size:15px;font-weight:700;border-top:1px dashed #777;margin-top:5px;padding-top:9px}
-    .footer{text-align:center;font-size:10px;margin-top:22px;color:#555}@media print{body{padding:0}}
-  </style></head><body><div class="receipt">${body}</div><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`)
-  printWindow.document.close()
-  return true
-}
-
-export function SalesOrderPage({ categories, items, currency, restaurantName, branchName, recentSales, canCreate, onCompleteSale, onNotify }: SalesOrderPageProps) {
+export function SalesOrderPage({ categories, items, currency, restaurantName, branchName, recentSales, nextOrderNumber, canCreate, onCreateOrder, onCompleteSale, onNotify }: SalesOrderPageProps) {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
+  const [tableNumber, setTableNumber] = useState(tableOptions[0])
   const [discountInput, setDiscountInput] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash')
 
@@ -76,6 +59,7 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
   const numericDiscount = Number(discountInput)
   const discount = Number.isFinite(numericDiscount) ? Math.max(0, Math.min(numericDiscount, subtotal)) : 0
   const total = Math.max(0, subtotal - discount)
+  const orderLines: OrderLine[] = cart.map((line) => ({ itemId: line.item.id, name: line.item.name, price: line.item.price, quantity: line.quantity }))
 
   const addItem = (item: MenuItem) => {
     setCart((current) => {
@@ -93,40 +77,41 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
 
   const clearOrder = () => {
     setCart([])
+    setTableNumber(tableOptions[0])
     setDiscountInput('')
     setPaymentMethod('Cash')
   }
 
-  const orderRows = cart.map((line) => `<tr><td>${escapeHtml(line.item.name)} × ${line.quantity}</td><td>${escapeHtml(formatCurrency(line.item.price * line.quantity, currency))}</td></tr>`).join('')
-  const kotRows = cart.map((line) => `<tr><td>${escapeHtml(line.item.name)}</td><td>${line.quantity}</td></tr>`).join('')
-
   const printKot = () => {
+    if (!canCreate) return onNotify('You do not have permission to create an order.')
     if (!cart.length) return onNotify('Add at least one food item before printing the KOT.')
-    const printed = openPrintWindow('Kitchen Order Ticket', `
-      <h1>${escapeHtml(restaurantName)}</h1><h2>${escapeHtml(branchName)} · Kitchen Order Ticket</h2>
-      <div class="meta"><strong>Order time:</strong> ${escapeHtml(new Date().toLocaleString('en-GB'))}</div>
-      <table><thead><tr><th>Food item</th><th>Quantity</th></tr></thead><tbody>${kotRows}</tbody></table>
-      <p class="footer">Kitchen copy</p>`)
-    if (printed) onNotify('KOT opened for printing.')
-    else onNotify('The print window was blocked by the browser.')
+    const printed = printKotReceipt({ restaurantName, branchName, orderNumber: nextOrderNumber, tableNumber, lines: orderLines })
+    if (!printed) return onNotify('The print window was blocked by the browser.')
+
+    onCreateOrder({
+      orderNumber: nextOrderNumber,
+      tableNumber,
+      lines: orderLines,
+      discount,
+      paymentMethod,
+      subtotal,
+      total,
+    })
+    onNotify(`KOT sent. Order #${String(nextOrderNumber).padStart(4, '0')} is now in Orders.`)
+    clearOrder()
   }
 
   const printBill = () => {
     if (!canCreate) return onNotify('You do not have permission to create a sale.')
     if (!cart.length) return onNotify('Add at least one food item before printing the bill.')
-    const printed = openPrintWindow('Customer Bill', `
-      <h1>${escapeHtml(restaurantName)}</h1><h2>${escapeHtml(branchName)} · Customer Bill</h2>
-      <div class="meta"><strong>Date:</strong> ${escapeHtml(new Date().toLocaleString('en-GB'))}<br><strong>Payment:</strong> ${escapeHtml(paymentMethod)}</div>
-      <table><thead><tr><th>Food item</th><th>Amount</th></tr></thead><tbody>${orderRows}</tbody></table>
-      <div class="totals"><div><span>Subtotal</span><strong>${escapeHtml(formatCurrency(subtotal, currency))}</strong></div><div><span>Discount</span><strong>${escapeHtml(formatCurrency(discount, currency))}</strong></div><div class="grand"><span>Total</span><span>${escapeHtml(formatCurrency(total, currency))}</span></div></div>
-      <p class="footer">Thank you for visiting ${escapeHtml(restaurantName)}</p>`)
+    const printed = printBillReceipt({ restaurantName, branchName, tableNumber, lines: orderLines, currency, paymentMethod, subtotal, discount, total })
     if (!printed) return onNotify('The print window was blocked by the browser.')
 
     const itemSummary = cart.map((line) => `${line.item.name} x ${line.quantity}`).join(', ')
     onCompleteSale({
       amount: total,
       paymentMethod,
-      note: `${itemSummary}. Subtotal ${formatCurrency(subtotal, currency)}. Discount ${formatCurrency(discount, currency)}.`,
+      note: `${tableNumber}. ${itemSummary}. Subtotal ${formatCurrency(subtotal, currency)}. Discount ${formatCurrency(discount, currency)}.`,
       occurredAt: new Date().toISOString(),
     })
     clearOrder()
@@ -135,7 +120,7 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
   return (
     <div className="page-stack sales-order-page">
       <section className="page-heading compact-heading sales-order-heading">
-        <div><span className="eyebrow">Point of sale</span><h1>Sales</h1><p>Select foods, review the bill summary, apply a discount and print the kitchen or customer copy.</p></div>
+        <div><span className="eyebrow">Point of sale</span><h1>Sales</h1><p>Select foods, assign a table, review the bill summary, apply a discount and print the kitchen or customer copy.</p></div>
         <div className="sales-order-stats"><span>Available foods</span><strong>{availableItems.length}</strong></div>
       </section>
 
@@ -176,6 +161,8 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
         <aside className="sales-summary-card">
           <div className="sales-summary-header"><div><span className="eyebrow">Current order</span><h2>Bill summary</h2></div><button className="icon-button" type="button" onClick={clearOrder} disabled={!cart.length} title="Clear order"><Trash2 size={18} /></button></div>
 
+          <label className="field sales-table-selector"><span>Table</span><select value={tableNumber} onChange={(event) => setTableNumber(event.target.value)}>{tableOptions.map((table) => <option value={table} key={table}>{table}</option>)}</select></label>
+
           <div className="sales-cart-lines">
             {!cart.length ? <div className="sales-cart-empty"><ShoppingBag size={27} /><strong>No food selected</strong><span>Choose an item from the menu to start an order.</span></div> : cart.map((line, index) => <div className="sales-cart-line" key={line.item.id}>
               <span className="sales-cart-number">{String(index + 1).padStart(2, '0')}</span>
@@ -197,7 +184,7 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
           </div>
 
           <div className="sales-print-actions">
-            <button className="button secondary" type="button" onClick={printKot} disabled={!cart.length}><Printer size={18} /> Print KOT</button>
+            <button className="button secondary" type="button" onClick={printKot} disabled={!cart.length || !canCreate}><Printer size={18} /> Print KOT</button>
             <button className="button primary" type="button" onClick={printBill} disabled={!cart.length || !canCreate}><ReceiptText size={18} /> Print bill</button>
           </div>
         </aside>
