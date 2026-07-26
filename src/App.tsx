@@ -15,6 +15,7 @@ import { HistoryPage } from './pages/HistoryPage'
 import { LoginPage } from './pages/LoginPage'
 import { MenuPage } from './pages/MenuPage'
 import { ReportsPage } from './pages/ReportsPage'
+import { SalesOrderPage } from './pages/SalesOrderPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { UsersPage } from './pages/UsersPage'
 import type { AppSettings, AppState, AuditRecord, CostEntry, FinancialEntry, PageKey, PeriodFilter, SalesEntry } from './types'
@@ -172,6 +173,12 @@ function App() {
   const updateUsers = (users: AppState['users']) => setState((current) => ({ ...current, users }))
   const updateMenuCategories = (menuCategories: AppState['menuCategories']) => setState((current) => ({ ...current, menuCategories }))
   const updateMenuItems = (menuItems: AppState['menuItems']) => setState((current) => ({ ...current, menuItems }))
+  const completeOrderSale = (sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => {
+    const now = new Date().toISOString()
+    const entry: SalesEntry = { ...sale, id: randomId('sale'), kind: 'sale', createdAt: now, createdBy: currentUser.id, editCount: 0 }
+    setState((current) => ({ ...current, sales: [entry, ...current.sales] }))
+    setToast('Bill printed and sale recorded.')
+  }
 
   const changeOwnPassword = async (currentPassword: string, newPassword: string): Promise<string | null> => {
     if (!isSuperadmin) return 'Only the superadmin can change passwords.'
@@ -186,7 +193,7 @@ function App() {
   const effectivePage = visiblePages.includes(page) ? page : visiblePages[0] ?? 'dashboard'
   const pageContent = (() => {
     if (noAccess) return <section className="content-card no-access-card"><h1>No permissions assigned</h1><p>Ask the superadmin to grant access to the required modules.</p></section>
-    if (effectivePage === 'sales') return <EntriesPage kind="sale" entries={visibleSales} users={state.users} currency={state.settings.currencyCode} limitedTo24Hours={!canViewAllEntries} canCreate={permissions['sales.create']} canEdit={canEdit} onCreate={() => openAdd('sale')} onEdit={openEdit} onView={openView} />
+    if (effectivePage === 'sales') return <SalesOrderPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} recentSales={visibleSales} canCreate={permissions['sales.create']} onCompleteSale={completeOrderSale} onNotify={setToast} />
     if (effectivePage === 'costs') return <EntriesPage kind="cost" entries={visibleCosts} users={state.users} currency={state.settings.currencyCode} limitedTo24Hours={!canViewAllEntries} canCreate={permissions['costs.create']} canEdit={canEdit} onCreate={() => openAdd('cost')} onEdit={openEdit} onView={openView} />
     if (effectivePage === 'menu') return <MenuPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} canManage={permissions['menu.manage']} currentUserId={currentUser.id} onCategoriesChange={updateMenuCategories} onItemsChange={updateMenuItems} onNotify={setToast} />
     if (effectivePage === 'history') return <HistoryPage records={state.auditRecords} users={state.users} currency={state.settings.currencyCode} />
