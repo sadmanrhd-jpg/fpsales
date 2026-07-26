@@ -1,4 +1,4 @@
-import { allPermissions, defaultState, emptyPermissions } from '../data/defaults'
+import { allPermissions, defaultState, emptyPermissions, sampleMenuCategories, sampleMenuItems } from '../data/defaults'
 import type { AppState, AppUser } from '../types'
 
 const STORAGE_KEY = 'food-pavilion-sales-manager-v2'
@@ -20,13 +20,16 @@ export function loadState(): AppState {
     const users = Array.isArray(parsed.users) && parsed.users.length
       ? parsed.users.map(normalizeUser)
       : structuredClone(defaultState.users)
+    const storedMenuCategories = Array.isArray(parsed.menuCategories) ? parsed.menuCategories : []
+    const storedMenuItems = Array.isArray(parsed.menuItems) ? parsed.menuItems : []
+    const shouldSeedSampleMenu = storedMenuCategories.length === 0 && storedMenuItems.length === 0
     return {
       users,
       sales: Array.isArray(parsed.sales) ? parsed.sales : [],
       costs: Array.isArray(parsed.costs) ? parsed.costs : [],
       auditRecords: Array.isArray(parsed.auditRecords) ? parsed.auditRecords : [],
-      menuCategories: Array.isArray(parsed.menuCategories) ? parsed.menuCategories : [],
-      menuItems: Array.isArray(parsed.menuItems) ? parsed.menuItems : [],
+      menuCategories: shouldSeedSampleMenu ? structuredClone(sampleMenuCategories) : storedMenuCategories,
+      menuItems: shouldSeedSampleMenu ? structuredClone(sampleMenuItems) : storedMenuItems,
       settings: { ...defaultState.settings, ...(parsed.settings ?? {}) },
     }
   } catch {
