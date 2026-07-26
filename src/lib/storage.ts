@@ -1,5 +1,5 @@
 import { allPermissions, defaultState, emptyPermissions, sampleMenuCategories, sampleMenuItems } from '../data/defaults'
-import type { AppState, AppUser } from '../types'
+import type { AppState, AppUser, OngoingOrder } from '../types'
 
 const STORAGE_KEY = 'food-pavilion-sales-manager-v2'
 const SESSION_KEY = 'food-pavilion-session-v2'
@@ -12,6 +12,10 @@ const normalizeUser = (user: AppUser): AppUser => ({
     : { ...emptyPermissions(), ...(user.permissions ?? {}) },
 })
 
+const normalizeOrders = (orders: unknown): OngoingOrder[] => Array.isArray(orders)
+  ? orders.filter((order): order is OngoingOrder => Boolean(order && typeof order === 'object'))
+  : []
+
 export function loadState(): AppState {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -23,6 +27,13 @@ export function loadState(): AppState {
     const storedMenuCategories = Array.isArray(parsed.menuCategories) ? parsed.menuCategories : []
     const storedMenuItems = Array.isArray(parsed.menuItems) ? parsed.menuItems : []
     const shouldSeedSampleMenu = storedMenuCategories.length === 0 && storedMenuItems.length === 0
+    const orders = normalizeOrders(parsed.orders)
+    const largestOrderNumber = orders.reduce((largest, order) => Math.max(largest, Number(order.orderNumber) || 0), 0)
+    const parsedNextOrderNumber = Number(parsed.nextOrderNumber)
+    const nextOrderNumber = Number.isInteger(parsedNextOrderNumber) && parsedNextOrderNumber > largestOrderNumber
+      ? parsedNextOrderNumber
+      : largestOrderNumber + 1
+
     return {
       users,
       sales: Array.isArray(parsed.sales) ? parsed.sales : [],
@@ -30,6 +41,8 @@ export function loadState(): AppState {
       auditRecords: Array.isArray(parsed.auditRecords) ? parsed.auditRecords : [],
       menuCategories: shouldSeedSampleMenu ? structuredClone(sampleMenuCategories) : storedMenuCategories,
       menuItems: shouldSeedSampleMenu ? structuredClone(sampleMenuItems) : storedMenuItems,
+      orders,
+      nextOrderNumber: Math.max(1, nextOrderNumber),
       settings: { ...defaultState.settings, ...(parsed.settings ?? {}) },
     }
   } catch {

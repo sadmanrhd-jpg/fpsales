@@ -1,5 +1,5 @@
 export type Role = 'reception' | 'manager' | 'admin' | 'superadmin'
-export type PageKey = 'dashboard' | 'sales' | 'costs' | 'menu' | 'history' | 'reports' | 'users' | 'settings'
+export type PageKey = 'dashboard' | 'sales' | 'orders' | 'costs' | 'menu' | 'history' | 'reports' | 'users' | 'settings'
 export type PeriodFilter = 'daily' | 'weekly' | 'monthly'
 export type EntryKind = 'sale' | 'cost'
 export type PaymentMethod = 'Cash' | 'Card' | 'Mobile Banking' | 'Other'
@@ -40,6 +40,8 @@ export interface AppUser {
   permissions: UserPermissions
   passwordSalt: string
   passwordHash: string
+  deletionPinSalt?: string
+  deletionPinHash?: string
   createdAt: string
 }
 
@@ -105,6 +107,28 @@ export interface MenuItem {
   createdBy: string
 }
 
+export interface OrderLine {
+  itemId: string
+  name: string
+  price: number
+  quantity: number
+}
+
+export interface OngoingOrder {
+  id: string
+  orderNumber: number
+  tableNumber: string
+  lines: OrderLine[]
+  discount: number
+  paymentMethod: PaymentMethod
+  subtotal: number
+  total: number
+  status: 'KOT sent'
+  createdAt: string
+  updatedAt: string
+  createdBy: string
+}
+
 export interface AppSettings {
   restaurantName: string
   branchName: string
@@ -120,5 +144,7 @@ export interface AppState {
   auditRecords: AuditRecord[]
   menuCategories: MenuCategory[]
   menuItems: MenuItem[]
+  orders: OngoingOrder[]
+  nextOrderNumber: number
   settings: AppSettings
 }

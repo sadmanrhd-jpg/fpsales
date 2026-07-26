@@ -8,6 +8,7 @@ import {
   Pizza,
   Plus,
   Search,
+  ShieldCheck,
   ShoppingBag,
   Trash2,
   UtensilsCrossed,
@@ -24,6 +25,8 @@ interface MenuPageProps {
   currency: string
   canManage: boolean
   currentUserId: string
+  hasDeletionPin: boolean
+  onVerifyDeletionPin: (pin: string) => Promise<boolean>
   onCategoriesChange: (categories: MenuCategory[]) => void
   onItemsChange: (items: MenuItem[]) => void
   onNotify: (message: string) => void
@@ -35,6 +38,10 @@ interface MenuItemFormProps {
   onSubmit: (data: Pick<MenuItem, 'name' | 'categoryId' | 'description' | 'price' | 'available'>) => void
   onCancel: () => void
 }
+
+type PendingDelete =
+  | { kind: 'item'; item: MenuItem }
+  | { kind: 'category'; category: MenuCategory }
 
 const categoryIcons = [ShoppingBag, Pizza, Drumstick, CupSoda, CakeSlice, UtensilsCrossed]
 
@@ -69,13 +76,17 @@ function MenuItemForm({ categories, item, onSubmit, onCancel }: MenuItemFormProp
   )
 }
 
-export function MenuPage({ categories, items, currency, canManage, currentUserId, onCategoriesChange, onItemsChange, onNotify }: MenuPageProps) {
+export function MenuPage({ categories, items, currency, canManage, currentUserId, hasDeletionPin, onVerifyDeletionPin, onCategoriesChange, onItemsChange, onNotify }: MenuPageProps) {
   const [query, setQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [categoryName, setCategoryName] = useState('')
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
   const [showItemForm, setShowItemForm] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
+  const [deletionPin, setDeletionPin] = useState('')
+  const [deletionError, setDeletionError] = useState('')
+  const [checkingPin, setCheckingPin] = useState(false)
 
   const categoryMap = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories])
   const filteredItems = useMemo(() => items.filter((item) => {
@@ -113,19 +124,33 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
     onNotify(item.available ? 'Menu item marked unavailable.' : 'Menu item marked available.')
   }
 
-  const deleteItem = (item: MenuItem) => {
-    if (!window.confirm(`Delete ${item.name} from the menu?`)) return
-    onItemsChange(items.filter((current) => current.id !== item.id))
-    onNotify('Menu item deleted.')
+  const requestDelete = (target: PendingDelete) => {
+    if (!hasDeletionPin) {
+      onNotify('Create your 4 digit deletion PIN in Settings before deleting saved data.')
+      return
+    }
+    setDeletionPin('')
+    setDeletionError('')
+    setPendingDelete(target)
   }
 
-  const deleteCategory = (category: MenuCategory) => {
-    const affectedItems = items.filter((item) => item.categoryId === category.id)
-    const itemMessage = affectedItems.length
-      ? ` ${affectedItems.length} food item${affectedItems.length === 1 ? '' : 's'} will remain in the menu as uncategorised.`
-      : ''
-    if (!window.confirm(`Delete the ${category.name} category?${itemMessage}`)) return
+  const closeDeleteModal = () => {
+    setPendingDelete(null)
+    setDeletionPin('')
+    setDeletionError('')
+    setCheckingPin(false)
+  }
 
+  const applyDeletion = () => {
+    if (!pendingDelete) return
+    if (pendingDelete.kind === 'item') {
+      onItemsChange(items.filter((current) => current.id !== pendingDelete.item.id))
+      onNotify('Menu item deleted.')
+      return
+    }
+
+    const category = pendingDelete.category
+    const affectedItems = items.filter((item) => item.categoryId === category.id)
     onCategoriesChange(categories.filter((current) => current.id !== category.id))
     if (affectedItems.length) {
       const now = new Date().toISOString()
@@ -134,6 +159,21 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
     if (selectedCategory === category.id) setSelectedCategory('all')
     onNotify('Menu category deleted.')
   }
+
+  const confirmDeletion = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setDeletionError('')
+    if (!/^\d{4}$/.test(deletionPin)) return setDeletionError('Enter your 4 digit deletion PIN.')
+    setCheckingPin(true)
+    const valid = await onVerifyDeletionPin(deletionPin)
+    setCheckingPin(false)
+    if (!valid) return setDeletionError('The deletion PIN is incorrect.')
+    applyDeletion()
+    closeDeleteModal()
+  }
+
+  const deleteName = pendingDelete?.kind === 'item' ? pendingDelete.item.name : pendingDelete?.category.name
+  const affectedCategoryItems = pendingDelete?.kind === 'category' ? items.filter((item) => item.categoryId === pendingDelete.category.id).length : 0
 
   return (
     <div className="page-stack menu-management-page">
@@ -152,7 +192,7 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
             const Icon = categoryIcons[index % categoryIcons.length]
             return <div className="menu-category-card-wrap" key={category.id}>
               <button type="button" className={`menu-category-tile ${selectedCategory === category.id ? 'active' : ''} ${category.active ? '' : 'inactive'}`} onClick={() => setSelectedCategory(category.id)}><span><Icon size={25} /></span><strong>{category.name}</strong><small>{items.filter((item) => item.categoryId === category.id).length} items</small></button>
-              {canManage && <button type="button" className="menu-category-delete" onClick={() => deleteCategory(category)} aria-label={`Delete ${category.name} category`} title={`Delete ${category.name}`}><Trash2 size={14} /></button>}
+              {canManage && <button type="button" className="menu-category-delete" onClick={() => requestDelete({ kind: 'category', category })} aria-label={`Delete ${category.name} category`} title={`Delete ${category.name}`}><Trash2 size={14} /></button>}
             </div>
           })}
         </div>
@@ -171,11 +211,18 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
           <td>{categoryMap.get(item.categoryId) ?? 'Uncategorised'}</td>
           <td className="menu-price-cell">{formatCurrency(item.price, currency)}</td>
           <td><button type="button" className={`availability-badge table-badge ${item.available ? 'available' : ''}`} onClick={() => canManage && toggleAvailability(item)} disabled={!canManage}>{item.available ? 'In stock' : 'Unavailable'}</button></td>
-          {canManage && <td className="actions-cell"><button className="icon-button subtle" type="button" onClick={() => { setEditingItem(item); setShowItemForm(true) }} aria-label="Edit menu item"><Edit3 size={16} /></button><button className="icon-button subtle danger-text" type="button" onClick={() => deleteItem(item)} aria-label="Delete menu item"><Trash2 size={16} /></button></td>}
+          {canManage && <td className="actions-cell"><button className="icon-button subtle" type="button" onClick={() => { setEditingItem(item); setShowItemForm(true) }} aria-label="Edit menu item"><Edit3 size={16} /></button><button className="icon-button subtle danger-text" type="button" onClick={() => requestDelete({ kind: 'item', item })} aria-label="Delete menu item"><Trash2 size={16} /></button></td>}
         </tr>)}</tbody></table></div>}
       </section>
 
       {showItemForm && canManage && <Modal title={editingItem ? 'Edit menu item' : 'Add menu item'} onClose={() => { setShowItemForm(false); setEditingItem(null) }}><MenuItemForm categories={categories} item={editingItem ?? undefined} onSubmit={saveItem} onCancel={() => { setShowItemForm(false); setEditingItem(null) }} /></Modal>}
+
+      {pendingDelete && <Modal title="Confirm deletion" onClose={closeDeleteModal}><form className="entry-form deletion-confirm-form" onSubmit={confirmDeletion}>
+        <div className="deletion-warning"><ShieldCheck size={24} /><div><strong>Delete {deleteName}?</strong><p>This action requires your personal 4 digit deletion PIN.{affectedCategoryItems ? ` ${affectedCategoryItems} food item${affectedCategoryItems === 1 ? '' : 's'} will remain as uncategorised.` : ''}</p></div></div>
+        <label className="field"><span>Deletion PIN</span><input type="password" inputMode="numeric" maxLength={4} value={deletionPin} onChange={(event) => setDeletionPin(event.target.value.replace(/\D/g, '').slice(0, 4))} autoComplete="off" placeholder="Enter 4 digits" autoFocus /></label>
+        {deletionError && <p className="form-error">{deletionError}</p>}
+        <div className="form-actions"><button className="button secondary" type="button" onClick={closeDeleteModal}>Cancel</button><button className="button deletion-button" type="submit" disabled={checkingPin || deletionPin.length !== 4}><Trash2 size={17} /> {checkingPin ? 'Checking...' : 'Delete permanently'}</button></div>
+      </form></Modal>}
     </div>
   )
 }

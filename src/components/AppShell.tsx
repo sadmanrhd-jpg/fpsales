@@ -1,4 +1,4 @@
-import { BarChart3, ClipboardList, FileClock, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, SlidersHorizontal, Users, UtensilsCrossed, WalletCards, X } from 'lucide-react'
+import { BarChart3, ClipboardList, FileClock, LayoutDashboard, ListOrdered, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, SlidersHorizontal, Users, UtensilsCrossed, WalletCards, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { AppUser, PageKey, Role } from '../types'
 
@@ -14,6 +14,7 @@ interface AppShellProps {
 const navItems: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboard }> = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'sales', label: 'Sales', icon: WalletCards },
+  { key: 'orders', label: 'Orders', icon: ListOrdered },
   { key: 'costs', label: 'Costs', icon: Receipt },
   { key: 'menu', label: 'Food menu', icon: UtensilsCrossed },
   { key: 'history', label: 'Edit history', icon: FileClock },
@@ -65,7 +66,7 @@ export function AppShell({ children, activePage, onPageChange, currentUser, onLo
           <div className="topbar-spacer" />
           <div className="signed-user"><div className="avatar">{currentUser.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div className="user-copy"><strong>{currentUser.name}</strong><span>{roleLabel[currentUser.role]}</span></div><button className="icon-button logout-button" type="button" onClick={onLogout} aria-label="Sign out" title="Sign out"><LogOut size={18} /></button></div>
         </header>
-        <main className={`main-content ${activePage === 'sales' ? 'sales-main-content' : ''}`}>{children}</main>
+        <main className={`main-content ${activePage === 'sales' || activePage === 'orders' ? 'sales-main-content' : ''}`}>{children}</main>
       </div>
       <div className="mobile-bottom-nav">
         {navItems.filter((item) => visiblePages.includes(item.key)).slice(0, 4).map((item) => { const Icon = item.icon; return <button type="button" key={item.key} className={activePage === item.key ? 'active' : ''} onClick={() => navigate(item.key)}><Icon size={19} /><span>{item.label === 'Food menu' ? 'Menu' : item.label}</span></button> })}
