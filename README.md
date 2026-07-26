@@ -1,34 +1,60 @@
-# Food Pavilion Sales and Cost Manager
+# Food Pavilion Sales, Cost and Menu Manager
 
-A responsive restaurant sales and cost management application built with React, TypeScript and Vite. The interface is ready for deployment on Vercel.
+A responsive restaurant management starter application built with React, TypeScript and Vite. The repository is configured for deployment on Vercel.
 
-## Included features
+## Current features
+
+• Email and password sign in
+
+• One initial superadmin account only
+
+• Superadmin account creation for other users
+
+• Manual permission assignment for every user
+
+• Superadmin password change
+
+• Password replacement for any user by the superadmin
+
+• Other users cannot change their own password
 
 • Dashboard with daily, weekly and monthly summaries
 
-• Sales entries with payment method, note, date, time and creator
+• Sales and cost entries
 
-• Cost entries with category, description and optional bill attachment
-
-• Reception access limited to the last 24 hours
+• Reception access limited to the last 24 hours when granted
 
 • Reception editing limited to two edits with a mandatory reason
 
-• Complete audit history with original data, updated data, reason, editor and timestamp
+• Complete financial edit history
 
-• Manager review access
+• PDF and CSV financial report export
 
-• Admin user, role, permission, settings and export access
+• Menu category and menu item creation
 
-• PDF and CSV financial report exports
+• Menu item editing and availability control
 
 • Responsive desktop, tablet and mobile layouts
 
-• Food Pavilion branding and uploaded logo
+• Food Pavilion logo and branding
 
-• Browser local storage for an immediately usable demo
+## Initial state
 
-• PostgreSQL and Supabase migration prepared for future restaurant modules
+The application starts with:
+
+• One superadmin account using the credentials supplied for this build
+
+• Zero sales entries
+
+• Zero cost entries
+
+• Zero audit records
+
+• Zero menu categories
+
+• Zero menu items
+
+Change the superadmin password from Settings after the first sign in.
 
 ## Run locally
 
@@ -36,8 +62,6 @@ A responsive restaurant sales and cost management application built with React, 
 npm install
 npm run dev
 ```
-
-Open the local address shown by Vite.
 
 ## Production build
 
@@ -49,24 +73,26 @@ npm run preview
 ## Deploy to Vercel
 
 1. Upload this folder to a GitHub repository.
-2. Import the repository in Vercel.
-3. Vercel detects Vite automatically.
-4. Use `npm run build` as the build command and `dist` as the output directory.
+2. Import the repository into Vercel.
+3. Use `npm run build` as the build command.
+4. Use `dist` as the output directory.
 5. Deploy.
 
-No environment variables are required for the current local storage demo.
+## Data and authentication scope
 
-## Demo role switching
+The current deployable build stores users, password hashes, permissions, menu data, sales, costs, and sessions in browser storage. This makes the application immediately usable as a single browser prototype.
 
-Use the user selector in the top right corner to preview Reception, Manager and Admin access. This preview control should be replaced by authenticated user sessions when connecting a backend.
+Browser storage is not a central database. Accounts and records created in one browser are not automatically shared with another device. For a live multi device restaurant deployment, connect the included Supabase schema and replace the local storage adapter with Supabase Auth, PostgreSQL, and Storage.
 
 ## Database readiness
 
-The file `supabase/migrations/202607260001_initial_schema.sql` defines an extensible PostgreSQL schema for:
+The migration in `supabase/migrations/202607260001_initial_schema.sql` includes:
 
 • Organisations and multiple branches
 
-• Role based permissions
+• Authenticated profiles and superadmin role support
+
+• Per user permissions
 
 • Financial entries and immutable audit history
 
@@ -83,9 +109,3 @@ The file `supabase/migrations/202607260001_initial_schema.sql` defines an extens
 • Inventory and stock movements
 
 • Payments and discounts
-
-The unfinished future modules are not visible in the current interface.
-
-## Recommended production connection
-
-Use Supabase Auth for user sessions, PostgreSQL for records and Supabase Storage for uploaded bills. Replace `src/lib/storage.ts` with a remote data adapter while keeping the page and component layer unchanged.

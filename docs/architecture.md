@@ -1,17 +1,21 @@
 # Architecture notes
 
-## Current application layer
+## Frontend
 
-The current build uses React components and one central typed state object. Data is stored in browser local storage so the project can be deployed and reviewed without backend credentials.
+React, TypeScript and Vite provide the interface. Pages are permission aware and use shared financial entry components.
 
-## Production data layer
+## Authentication
 
-The interface is intentionally separated from the persistence helper in `src/lib/storage.ts`. A production implementation can replace this helper with a Supabase service without redesigning the pages.
+The current prototype uses PBKDF2 password hashing in the browser and stores only the password salt and derived hash. The initial state contains one superadmin. The superadmin creates all other accounts, grants permissions individually, and controls every password change.
 
-## Audit rules
+## Local persistence
 
-Every edit creates a separate audit record containing the entire original entry, the updated entry, the edit reason, editor, edit timestamp and sequential edit number. Reception access checks both the 24 hour visibility rule and the two edit limit. Manager and Admin roles use the unlimited correction permission while still creating an audit record.
+`src/lib/storage.ts` is the local data adapter. It stores application data and the current session in browser local storage using version 2 keys. The previous sample data key is not loaded.
 
-## Future modules
+## Production adapter
 
-The database migration includes future entities, but the navigation only exposes current scope pages. New modules can be added as separate pages and services when needed.
+For a shared production system, replace the local adapter with Supabase Auth and PostgreSQL. The supplied migration uses per profile permissions and reserves the superadmin role for complete access.
+
+## Module boundaries
+
+The active modules are dashboard, sales, costs, menu, audit history, reports, users, and settings. Future database tables cover branches, orders, kitchen tokens, tables, inventory, customers, employees, payments, and discounts.

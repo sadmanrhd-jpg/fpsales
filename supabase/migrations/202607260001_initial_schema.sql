@@ -3,7 +3,7 @@
 
 create extension if not exists "pgcrypto";
 
-create type public.app_role as enum ('reception', 'manager', 'admin');
+create type public.app_role as enum ('reception', 'manager', 'admin', 'superadmin');
 create type public.entry_kind as enum ('sale', 'cost');
 create type public.payment_method as enum ('cash', 'card', 'mobile_banking', 'other');
 create type public.order_status as enum ('draft', 'confirmed', 'preparing', 'ready', 'served', 'completed', 'cancelled');
@@ -52,12 +52,13 @@ create table public.permissions (
   created_at timestamptz not null default now()
 );
 
-create table public.role_permissions (
-  organisation_id uuid not null references public.organisations(id) on delete cascade,
-  role public.app_role not null,
+create table public.profile_permissions (
+  profile_id uuid not null references public.profiles(id) on delete cascade,
   permission_id uuid not null references public.permissions(id) on delete cascade,
   allowed boolean not null default false,
-  primary key (organisation_id, role, permission_id)
+  granted_by uuid references public.profiles(id) on delete set null,
+  granted_at timestamptz not null default now(),
+  primary key (profile_id, permission_id)
 );
 
 create table public.financial_entries (
@@ -111,7 +112,7 @@ create table public.financial_entry_audits (
 
 create index financial_entry_audits_entry_idx on public.financial_entry_audits(financial_entry_id, edited_at desc);
 
--- Future menu management
+-- Menu management
 create table public.menu_categories (
   id uuid primary key default gen_random_uuid(),
   branch_id uuid not null references public.branches(id) on delete cascade,
@@ -313,4 +314,5 @@ alter table public.financial_entry_audits enable row level security;
 alter table public.entry_attachments enable row level security;
 
 comment on table public.financial_entry_audits is 'Immutable history of financial entry corrections. Application code should insert records and never update them.';
-comment on column public.financial_entries.edit_count is 'Reception users are limited to two edits by application policy. Manager and Admin edits remain audited.';
+comment on column public.financial_entries.edit_count is 'Reception users are limited to two edits by application policy. Other authorised edits remain audited.';
+comment on table public.profile_permissions is 'Permissions are assigned to individual users by the superadmin.';

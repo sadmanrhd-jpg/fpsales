@@ -13,6 +13,8 @@ interface DashboardProps {
   currency: string
   receptionMode: boolean
   canExport: boolean
+  canAddSale: boolean
+  canAddCost: boolean
   canEdit: (entry: FinancialEntry) => boolean
   onAddSale: () => void
   onAddCost: () => void
@@ -22,7 +24,7 @@ interface DashboardProps {
 }
 
 export function DashboardPage(props: DashboardProps) {
-  const { period, onPeriodChange, sales, costs, users, currency, receptionMode, canExport, canEdit, onAddSale, onAddCost, onEdit, onView, onExport } = props
+  const { period, onPeriodChange, sales, costs, users, currency, receptionMode, canExport, canAddSale, canAddCost, canEdit, onAddSale, onAddCost, onEdit, onView, onExport } = props
   const periodSales = filterByPeriod(sales, period)
   const periodCosts = filterByPeriod(costs, period)
   const totalSales = periodSales.reduce((sum, item) => sum + item.amount, 0)
@@ -60,17 +62,17 @@ export function DashboardPage(props: DashboardProps) {
         </article>
       </section>
 
-      <section className="quick-actions-card">
+      {(canAddSale || canAddCost) && <section className="quick-actions-card">
         <div>
           <span className="eyebrow">Quick entry</span>
           <h2>Add today’s transaction</h2>
           <p>Choose the entry type and complete one short form.</p>
         </div>
-        <div className="quick-action-buttons">
-          <button className="quick-action sale" type="button" onClick={onAddSale}><span><CircleDollarSign size={22} /></span><div><strong>Add sale</strong><small>Cash, card or mobile banking</small></div><Plus size={20} /></button>
-          <button className="quick-action cost" type="button" onClick={onAddCost}><span><ReceiptText size={22} /></span><div><strong>Add cost</strong><small>Bills, purchases and expenses</small></div><Plus size={20} /></button>
+        <div className={`quick-action-buttons ${canAddSale && canAddCost ? '' : 'single-action'}`}>
+          {canAddSale && <button className="quick-action sale" type="button" onClick={onAddSale}><span><CircleDollarSign size={22} /></span><div><strong>Add sale</strong><small>Cash, card or mobile banking</small></div><Plus size={20} /></button>}
+          {canAddCost && <button className="quick-action cost" type="button" onClick={onAddCost}><span><ReceiptText size={22} /></span><div><strong>Add cost</strong><small>Bills, purchases and expenses</small></div><Plus size={20} /></button>}
         </div>
-      </section>
+      </section>}
 
       <section className="content-card">
         <div className="section-heading"><div><span className="eyebrow">Latest activity</span><h2>Recent sales and costs</h2></div><span className="section-count">{activity.length} shown</span></div>

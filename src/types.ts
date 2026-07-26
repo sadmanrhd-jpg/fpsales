@@ -1,5 +1,5 @@
-export type Role = 'reception' | 'manager' | 'admin'
-export type PageKey = 'dashboard' | 'sales' | 'costs' | 'history' | 'reports' | 'users' | 'settings'
+export type Role = 'reception' | 'manager' | 'admin' | 'superadmin'
+export type PageKey = 'dashboard' | 'sales' | 'costs' | 'menu' | 'history' | 'reports' | 'users' | 'settings'
 export type PeriodFilter = 'daily' | 'weekly' | 'monthly'
 export type EntryKind = 'sale' | 'cost'
 export type PaymentMethod = 'Cash' | 'Card' | 'Mobile Banking' | 'Other'
@@ -13,12 +13,34 @@ export type CostCategory =
   | 'Delivery expense'
   | 'Other expense'
 
+export type PermissionKey =
+  | 'dashboard.today'
+  | 'dashboard.history'
+  | 'sales.create'
+  | 'costs.create'
+  | 'entries.last24h'
+  | 'entries.all'
+  | 'entries.editLimited'
+  | 'entries.editUnlimited'
+  | 'audit.view'
+  | 'reports.view'
+  | 'reports.export'
+  | 'menu.view'
+  | 'menu.manage'
+  | 'settings.manage'
+
+export type UserPermissions = Record<PermissionKey, boolean>
+
 export interface AppUser {
   id: string
   name: string
   email: string
   role: Role
   active: boolean
+  permissions: UserPermissions
+  passwordSalt: string
+  passwordHash: string
+  createdAt: string
 }
 
 export interface SalesEntry {
@@ -63,22 +85,25 @@ export interface AuditRecord {
   editNumber: number
 }
 
-export type PermissionKey =
-  | 'dashboard.today'
-  | 'dashboard.history'
-  | 'sales.create'
-  | 'costs.create'
-  | 'entries.last24h'
-  | 'entries.all'
-  | 'entries.editLimited'
-  | 'entries.editUnlimited'
-  | 'audit.view'
-  | 'reports.view'
-  | 'reports.export'
-  | 'users.manage'
-  | 'settings.manage'
+export interface MenuCategory {
+  id: string
+  name: string
+  active: boolean
+  createdAt: string
+  createdBy: string
+}
 
-export type RolePermissions = Record<Role, Record<PermissionKey, boolean>>
+export interface MenuItem {
+  id: string
+  name: string
+  categoryId: string
+  description: string
+  price: number
+  available: boolean
+  createdAt: string
+  updatedAt: string
+  createdBy: string
+}
 
 export interface AppSettings {
   restaurantName: string
@@ -93,6 +118,7 @@ export interface AppState {
   sales: SalesEntry[]
   costs: CostEntry[]
   auditRecords: AuditRecord[]
-  rolePermissions: RolePermissions
+  menuCategories: MenuCategory[]
+  menuItems: MenuItem[]
   settings: AppSettings
 }
