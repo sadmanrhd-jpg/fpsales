@@ -16,15 +16,17 @@ interface DashboardProps {
   canAddSale: boolean
   canAddCost: boolean
   canEdit: (entry: FinancialEntry) => boolean
+  canDelete: (entry: FinancialEntry) => boolean
   onAddSale: () => void
   onAddCost: () => void
   onEdit: (entry: FinancialEntry) => void
   onView: (entry: FinancialEntry) => void
+  onDelete: (entry: FinancialEntry) => void
   onExport: () => void
 }
 
 export function DashboardPage(props: DashboardProps) {
-  const { period, onPeriodChange, sales, costs, users, currency, receptionMode, canExport, canAddSale, canAddCost, canEdit, onAddSale, onAddCost, onEdit, onView, onExport } = props
+  const { period, onPeriodChange, sales, costs, users, currency, receptionMode, canExport, canAddSale, canAddCost, canEdit, canDelete, onAddSale, onAddCost, onEdit, onView, onDelete, onExport } = props
   const periodSales = filterByPeriod(sales, period)
   const periodCosts = filterByPeriod(costs, period)
   const totalSales = periodSales.reduce((sum, item) => sum + item.amount, 0)
@@ -76,7 +78,7 @@ export function DashboardPage(props: DashboardProps) {
 
       <section className="content-card">
         <div className="section-heading"><div><span className="eyebrow">Latest activity</span><h2>Recent sales and costs</h2></div><span className="section-count">{activity.length} shown</span></div>
-        <EntryTable entries={activity} users={users} currency={currency} canEdit={canEdit} onEdit={onEdit} onView={onView} />
+        <EntryTable entries={activity} users={users} currency={currency} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onView={onView} onDelete={onDelete} />
       </section>
     </div>
   )
