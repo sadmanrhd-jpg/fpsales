@@ -1,4 +1,4 @@
-import { Eye, FileImage, Pencil, ReceiptText } from 'lucide-react'
+import { Eye, FileImage, Pencil, ReceiptText, Trash2 } from 'lucide-react'
 import type { AppUser, FinancialEntry } from '../types'
 import { entryLabel, formatCurrency, formatDateTime } from '../lib/utils'
 import { EmptyState } from './EmptyState'
@@ -8,12 +8,14 @@ interface EntryTableProps {
   users: AppUser[]
   currency: string
   canEdit: (entry: FinancialEntry) => boolean
+  canDelete?: (entry: FinancialEntry) => boolean
   onEdit: (entry: FinancialEntry) => void
   onView: (entry: FinancialEntry) => void
+  onDelete?: (entry: FinancialEntry) => void
   emptyTitle?: string
 }
 
-export function EntryTable({ entries, users, currency, canEdit, onEdit, onView, emptyTitle = 'No entries found' }: EntryTableProps) {
+export function EntryTable({ entries, users, currency, canEdit, canDelete = () => false, onEdit, onView, onDelete, emptyTitle = 'No entries found' }: EntryTableProps) {
   const getUser = (id: string) => users.find((user) => user.id === id)?.name ?? 'Unknown user'
   if (!entries.length) return <EmptyState title={emptyTitle} description="Entries added in this period will appear here." />
   return (
@@ -49,6 +51,7 @@ export function EntryTable({ entries, users, currency, canEdit, onEdit, onView, 
               <td className="actions-cell">
                 <button className="icon-button subtle" type="button" onClick={() => onView(entry)} aria-label="View entry"><Eye size={17} /></button>
                 <button className="icon-button subtle" type="button" onClick={() => onEdit(entry)} disabled={!canEdit(entry)} aria-label="Edit entry"><Pencil size={17} /></button>
+                {onDelete && canDelete(entry) && <button className="icon-button subtle danger-text" type="button" onClick={() => onDelete(entry)} aria-label="Delete cost entry" title="Delete cost entry"><Trash2 size={17} /></button>}
               </td>
             </tr>
           ))}

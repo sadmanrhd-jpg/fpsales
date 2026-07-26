@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
+import { ShieldCheck, Trash2 } from 'lucide-react'
 import { AppShell } from './components/AppShell'
 import { EntryDetails } from './components/EntryDetails'
 import { EntryForm } from './components/EntryForm'
@@ -28,6 +30,10 @@ function App() {
   const [period, setPeriod] = useState<PeriodFilter>('daily')
   const [modal, setModal] = useState<{ mode: 'add' | 'edit' | 'view'; kind?: 'sale' | 'cost'; entry?: FinancialEntry } | null>(null)
   const [toast, setToast] = useState('')
+  const [pendingCostDelete, setPendingCostDelete] = useState<CostEntry | null>(null)
+  const [costDeletionPin, setCostDeletionPin] = useState('')
+  const [costDeletionError, setCostDeletionError] = useState('')
+  const [checkingCostDeletionPin, setCheckingCostDeletionPin] = useState(false)
 
   useEffect(() => saveState(state), [state])
   useEffect(() => {
@@ -90,6 +96,9 @@ function App() {
     clearSession()
     setCurrentUserId(null)
     setModal(null)
+    setPendingCostDelete(null)
+    setCostDeletionPin('')
+    setCostDeletionError('')
     setPage('dashboard')
     setPeriod('daily')
   }
@@ -111,6 +120,47 @@ function App() {
   }
   const openEdit = (entry: FinancialEntry) => { if (canEdit(entry)) setModal({ mode: 'edit', kind: entry.kind, entry }) }
   const openView = (entry: FinancialEntry) => setModal({ mode: 'view', entry })
+
+
+  const requestDeleteCost = (entry: FinancialEntry) => {
+    if (!isSuperadmin || entry.kind !== 'cost') return
+    if (!currentUser.deletionPinHash || !currentUser.deletionPinSalt) {
+      setToast('Create your 4 digit deletion PIN in Settings before deleting cost entries.')
+      return
+    }
+    setPendingCostDelete(entry)
+    setCostDeletionPin('')
+    setCostDeletionError('')
+  }
+
+  const closeCostDeleteModal = () => {
+    setPendingCostDelete(null)
+    setCostDeletionPin('')
+    setCostDeletionError('')
+    setCheckingCostDeletionPin(false)
+  }
+
+  const confirmCostDeletion = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!pendingCostDelete || !isSuperadmin) return
+    if (!/^\d{4}$/.test(costDeletionPin)) {
+      setCostDeletionError('Enter your 4 digit deletion PIN.')
+      return
+    }
+    setCheckingCostDeletionPin(true)
+    const valid = await verifyDeletionPin(currentUser, costDeletionPin)
+    setCheckingCostDeletionPin(false)
+    if (!valid) {
+      setCostDeletionError('The deletion PIN is incorrect.')
+      return
+    }
+    setState((current) => ({
+      ...current,
+      costs: current.costs.filter((entry) => entry.id !== pendingCostDelete.id),
+    }))
+    closeCostDeleteModal()
+    setToast('Cost entry deleted.')
+  }
 
   const createEntry = (payload: Omit<SalesEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'> | Omit<CostEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>) => {
     const now = new Date().toISOString()
@@ -242,13 +292,13 @@ function App() {
     if (noAccess) return <section className="content-card no-access-card"><h1>No permissions assigned</h1><p>Ask the superadmin to grant access to the required modules.</p></section>
     if (effectivePage === 'sales') return <SalesOrderPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} recentSales={visibleSales} nextOrderNumber={state.nextOrderNumber} canCreate={permissions['sales.create']} onCreateOrder={createOngoingOrder} onCompleteSale={completeOrderSale} onNotify={setToast} />
     if (effectivePage === 'orders') return <OrdersPage orders={state.orders} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} canCreate={permissions['sales.create']} onUpdateOrder={updateOngoingOrder} onCompleteOrder={completeOngoingOrder} onNotify={setToast} />
-    if (effectivePage === 'costs') return <EntriesPage kind="cost" entries={visibleCosts} users={state.users} currency={state.settings.currencyCode} limitedTo24Hours={!canViewAllEntries} canCreate={permissions['costs.create']} canEdit={canEdit} onCreate={() => openAdd('cost')} onEdit={openEdit} onView={openView} />
+    if (effectivePage === 'costs') return <EntriesPage kind="cost" entries={visibleCosts} users={state.users} currency={state.settings.currencyCode} limitedTo24Hours={!canViewAllEntries} canCreate={permissions['costs.create']} canEdit={canEdit} canDelete={(entry) => isSuperadmin && entry.kind === 'cost'} onCreate={() => openAdd('cost')} onEdit={openEdit} onView={openView} onDelete={requestDeleteCost} />
     if (effectivePage === 'menu') return <MenuPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} canManage={permissions['menu.manage']} currentUserId={currentUser.id} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onVerifyDeletionPin={verifyOwnDeletionPin} onCategoriesChange={updateMenuCategories} onItemsChange={updateMenuItems} onNotify={setToast} />
     if (effectivePage === 'history') return <HistoryPage records={state.auditRecords} users={state.users} currency={state.settings.currencyCode} />
     if (effectivePage === 'reports') return <ReportsPage sales={state.sales} costs={state.costs} settings={state.settings} canExport={permissions['reports.export']} />
     if (effectivePage === 'users' && isSuperadmin) return <UsersPage users={state.users} currentUserId={currentUser.id} onUsersChange={updateUsers} onNotify={setToast} />
     if (effectivePage === 'settings') return <SettingsPage settings={state.settings} canManageSettings={isSuperadmin || permissions['settings.manage']} isSuperadmin={isSuperadmin} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onSave={saveSettings} onChangeOwnPassword={changeOwnPassword} onSaveDeletionPin={saveOwnDeletionPin} />
-    return <DashboardPage period={period} onPeriodChange={setPeriod} sales={visibleSales} costs={visibleCosts} users={state.users} currency={state.settings.currencyCode} receptionMode={!permissions['dashboard.history']} canExport={permissions['reports.export']} canAddSale={permissions['sales.create']} canAddCost={permissions['costs.create']} canEdit={canEdit} onAddSale={() => setPage('sales')} onAddCost={() => setPage('costs')} onEdit={openEdit} onView={openView} onExport={exportCurrentPeriod} />
+    return <DashboardPage period={period} onPeriodChange={setPeriod} sales={visibleSales} costs={visibleCosts} users={state.users} currency={state.settings.currencyCode} receptionMode={!permissions['dashboard.history']} canExport={permissions['reports.export']} canAddSale={permissions['sales.create']} canAddCost={permissions['costs.create']} canEdit={canEdit} canDelete={(entry) => isSuperadmin && entry.kind === 'cost'} onAddSale={() => setPage('sales')} onAddCost={() => setPage('costs')} onEdit={openEdit} onView={openView} onDelete={requestDeleteCost} onExport={exportCurrentPeriod} />
   })()
 
   return (
@@ -257,6 +307,12 @@ function App() {
       {modal?.mode === 'add' && modal.kind && <Modal title={`Add ${modal.kind}`} onClose={() => setModal(null)}><EntryForm kind={modal.kind} onSubmit={createEntry} onCancel={() => setModal(null)} /></Modal>}
       {modal?.mode === 'edit' && modal.kind && modal.entry && <Modal title={`Edit ${modal.kind}`} onClose={() => setModal(null)}><EntryForm kind={modal.kind} entry={modal.entry} requireReason onSubmit={editEntry} onCancel={() => setModal(null)} /></Modal>}
       {modal?.mode === 'view' && modal.entry && <Modal title="Entry details" onClose={() => setModal(null)}><EntryDetails entry={modal.entry} users={state.users} currency={state.settings.currencyCode} /></Modal>}
+      {pendingCostDelete && <Modal title="Confirm cost deletion" onClose={closeCostDeleteModal}><form className="entry-form deletion-confirm-form" onSubmit={confirmCostDeletion}>
+        <div className="deletion-warning"><ShieldCheck size={24} /><div><strong>Delete this cost entry?</strong><p>{pendingCostDelete.category}: {pendingCostDelete.description}. This action requires the Superadmin deletion PIN.</p></div></div>
+        <label className="field"><span>Deletion PIN</span><input type="password" inputMode="numeric" maxLength={4} value={costDeletionPin} onChange={(event) => { setCostDeletionPin(event.target.value.replace(/\D/g, '').slice(0, 4)); setCostDeletionError('') }} autoComplete="off" placeholder="Enter 4 digits" autoFocus /></label>
+        {costDeletionError && <p className="form-error">{costDeletionError}</p>}
+        <div className="form-actions"><button className="button secondary" type="button" onClick={closeCostDeleteModal}>Cancel</button><button className="button deletion-button" type="submit" disabled={checkingCostDeletionPin || costDeletionPin.length !== 4}><Trash2 size={17} /> {checkingCostDeletionPin ? 'Checking...' : 'Delete cost'}</button></div>
+      </form></Modal>}
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </>
   )
