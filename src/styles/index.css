@@ -572,3 +572,22 @@ tbody tr:hover { background: #fbfcfa; }
   .orders-card-grid { grid-template-columns: 1fr; }
   .ongoing-order-card-bottom { align-items: flex-start; flex-direction: column; }
 }
+
+.remember-me-option { display: inline-flex; align-items: center; gap: 9px; width: fit-content; color: #55615b; font-size: 12px; font-weight: 600; cursor: pointer; }
+.remember-me-option input { width: 17px; height: 17px; margin: 0; accent-color: var(--brand); }
+
+.permission-group-list { display: grid; gap: 18px; }
+.permission-group { display: grid; gap: 11px; padding-top: 17px; border-top: 1px solid var(--border); }
+.permission-group:first-child { padding-top: 0; border-top: 0; }
+.permission-group-heading { display: grid; gap: 4px; }
+.permission-group-heading strong { display: flex; align-items: center; gap: 7px; color: #33413b; font-size: 12px; }
+.permission-group-heading span { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.fixed-permission-group { padding: 15px; border: 1px solid #e2d8c8; border-radius: 12px; background: var(--gold-soft); }
+.fixed-permission-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.fixed-permission-list span { display: flex; align-items: center; gap: 7px; color: #705b3b; font-size: 10px; font-weight: 600; }
+.personal-permission-group { padding: 14px 15px; border: 1px solid #d7e0dc; border-radius: 12px; background: var(--brand-soft); }
+.modal-permissions { margin-top: 16px; }
+
+@media (max-width: 700px) {
+  .fixed-permission-list { grid-template-columns: 1fr; }
+}

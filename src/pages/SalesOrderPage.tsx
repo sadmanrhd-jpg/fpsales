@@ -25,7 +25,9 @@ interface SalesOrderPageProps {
   branchName: string
   recentSales: SalesEntry[]
   nextOrderNumber: number
-  canCreate: boolean
+  canCreateOrder: boolean
+  canPrintKot: boolean
+  canPrintBill: boolean
   onCreateOrder: (order: Omit<OngoingOrder, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'status'>) => void
   onCompleteSale: (sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => void
   onNotify: (message: string) => void
@@ -39,7 +41,7 @@ interface CartLine {
 const categoryIcons = [Pizza, ShoppingBag, Drumstick, CakeSlice, CupSoda, UtensilsCrossed]
 const tableOptions = Array.from({ length: 20 }, (_, index) => `Table ${String(index + 1).padStart(2, '0')}`)
 
-export function SalesOrderPage({ categories, items, currency, restaurantName, branchName, recentSales, nextOrderNumber, canCreate, onCreateOrder, onCompleteSale, onNotify }: SalesOrderPageProps) {
+export function SalesOrderPage({ categories, items, currency, restaurantName, branchName, recentSales, nextOrderNumber, canCreateOrder, canPrintKot, canPrintBill, onCreateOrder, onCompleteSale, onNotify }: SalesOrderPageProps) {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
@@ -62,6 +64,7 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
   const orderLines: OrderLine[] = cart.map((line) => ({ itemId: line.item.id, name: line.item.name, price: line.item.price, quantity: line.quantity }))
 
   const addItem = (item: MenuItem) => {
+    if (!canCreateOrder) return
     setCart((current) => {
       const existing = current.find((line) => line.item.id === item.id)
       if (existing) return current.map((line) => line.item.id === item.id ? { ...line, quantity: line.quantity + 1 } : line)
@@ -70,12 +73,14 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
   }
 
   const changeQuantity = (itemId: string, change: number) => {
+    if (!canCreateOrder) return
     setCart((current) => current
       .map((line) => line.item.id === itemId ? { ...line, quantity: line.quantity + change } : line)
       .filter((line) => line.quantity > 0))
   }
 
   const clearOrder = () => {
+    if (!canCreateOrder) return
     setCart([])
     setTableNumber(tableOptions[0])
     setDiscountInput('')
@@ -83,7 +88,8 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
   }
 
   const printKot = () => {
-    if (!canCreate) return onNotify('You do not have permission to create an order.')
+    if (!canCreateOrder) return onNotify('You do not have permission to create a sales order.')
+    if (!canPrintKot) return onNotify('You do not have permission to print a KOT.')
     if (!cart.length) return onNotify('Add at least one food item before printing the KOT.')
     const printed = printKotReceipt({ restaurantName, branchName, orderNumber: nextOrderNumber, tableNumber, lines: orderLines })
     if (!printed) return onNotify('The print window was blocked by the browser.')
@@ -102,7 +108,8 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
   }
 
   const printBill = () => {
-    if (!canCreate) return onNotify('You do not have permission to create a sale.')
+    if (!canCreateOrder) return onNotify('You do not have permission to create a sales order.')
+    if (!canPrintBill) return onNotify('You do not have permission to print a bill.')
     if (!cart.length) return onNotify('Add at least one food item before printing the bill.')
     const printed = printBillReceipt({ restaurantName, branchName, tableNumber, lines: orderLines, currency, paymentMethod, subtotal, discount, total })
     if (!printed) return onNotify('The print window was blocked by the browser.')
@@ -146,12 +153,12 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
             {filteredItems.map((item) => {
               const quantity = cart.find((line) => line.item.id === item.id)?.quantity ?? 0
               return <article className={`sales-food-card ${quantity ? 'selected' : ''}`} key={item.id}>
-                <button className="sales-food-card-main" type="button" onClick={() => addItem(item)}>
+                <button className="sales-food-card-main" type="button" onClick={() => addItem(item)} disabled={!canCreateOrder}>
                   <span className="sales-food-illustration"><UtensilsCrossed size={24} /></span>
                   <span className="sales-food-copy"><small>{activeCategories.find((category) => category.id === item.categoryId)?.name ?? 'Food'}</small><strong>{item.name}</strong><em>{formatCurrency(item.price, currency)}</em></span>
                   <Plus size={18} />
                 </button>
-                {quantity > 0 && <div className="sales-food-quantity"><button type="button" onClick={() => changeQuantity(item.id, -1)} aria-label={`Remove one ${item.name}`}><Minus size={15} /></button><span>{quantity}</span><button type="button" onClick={() => changeQuantity(item.id, 1)} aria-label={`Add one ${item.name}`}><Plus size={15} /></button></div>}
+                {quantity > 0 && <div className="sales-food-quantity"><button type="button" onClick={() => changeQuantity(item.id, -1)} disabled={!canCreateOrder} aria-label={`Remove one ${item.name}`}><Minus size={15} /></button><span>{quantity}</span><button type="button" onClick={() => changeQuantity(item.id, 1)} disabled={!canCreateOrder} aria-label={`Add one ${item.name}`}><Plus size={15} /></button></div>}
               </article>
             })}
             {!filteredItems.length && <div className="sales-food-empty"><UtensilsCrossed size={30} /><strong>No foods found</strong><span>Try another category or search term.</span></div>}
@@ -159,22 +166,22 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
         </div>
 
         <aside className="sales-summary-card">
-          <div className="sales-summary-header"><div><span className="eyebrow">Current order</span><h2>Bill summary</h2></div><button className="icon-button" type="button" onClick={clearOrder} disabled={!cart.length} title="Clear order"><Trash2 size={18} /></button></div>
+          <div className="sales-summary-header"><div><span className="eyebrow">Current order</span><h2>Bill summary</h2></div><button className="icon-button" type="button" onClick={clearOrder} disabled={!cart.length || !canCreateOrder} title="Clear order"><Trash2 size={18} /></button></div>
 
-          <label className="field sales-table-selector"><span>Table</span><select value={tableNumber} onChange={(event) => setTableNumber(event.target.value)}>{tableOptions.map((table) => <option value={table} key={table}>{table}</option>)}</select></label>
+          <label className="field sales-table-selector"><span>Table</span><select value={tableNumber} onChange={(event) => setTableNumber(event.target.value)} disabled={!canCreateOrder}>{tableOptions.map((table) => <option value={table} key={table}>{table}</option>)}</select></label>
 
           <div className="sales-cart-lines">
             {!cart.length ? <div className="sales-cart-empty"><ShoppingBag size={27} /><strong>No food selected</strong><span>Choose an item from the menu to start an order.</span></div> : cart.map((line, index) => <div className="sales-cart-line" key={line.item.id}>
               <span className="sales-cart-number">{String(index + 1).padStart(2, '0')}</span>
               <div><strong>{line.item.name}</strong><small>{formatCurrency(line.item.price, currency)} × {line.quantity}</small></div>
               <strong>{formatCurrency(line.item.price * line.quantity, currency)}</strong>
-              <div className="sales-cart-controls"><button type="button" onClick={() => changeQuantity(line.item.id, -1)}><Minus size={13} /></button><span>{line.quantity}</span><button type="button" onClick={() => changeQuantity(line.item.id, 1)}><Plus size={13} /></button></div>
+              <div className="sales-cart-controls"><button type="button" onClick={() => changeQuantity(line.item.id, -1)} disabled={!canCreateOrder}><Minus size={13} /></button><span>{line.quantity}</span><button type="button" onClick={() => changeQuantity(line.item.id, 1)} disabled={!canCreateOrder}><Plus size={13} /></button></div>
             </div>)}
           </div>
 
           <div className="sales-bill-fields">
-            <label className="field"><span>Discount amount</span><input type="number" min="0" max={subtotal} step="1" value={discountInput} onChange={(event) => setDiscountInput(event.target.value)} placeholder="0" /></label>
-            <label className="field"><span>Payment method</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}><option>Cash</option><option>Card</option><option>Mobile Banking</option><option>Other</option></select></label>
+            <label className="field"><span>Discount amount</span><input type="number" min="0" max={subtotal} step="1" value={discountInput} onChange={(event) => setDiscountInput(event.target.value)} disabled={!canCreateOrder} placeholder="0" /></label>
+            <label className="field"><span>Payment method</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)} disabled={!canCreateOrder}><option>Cash</option><option>Card</option><option>Mobile Banking</option><option>Other</option></select></label>
           </div>
 
           <div className="sales-total-box">
@@ -184,8 +191,8 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
           </div>
 
           <div className="sales-print-actions">
-            <button className="button secondary" type="button" onClick={printKot} disabled={!cart.length || !canCreate}><Printer size={18} /> Print KOT</button>
-            <button className="button primary" type="button" onClick={printBill} disabled={!cart.length || !canCreate}><ReceiptText size={18} /> Print bill</button>
+            <button className="button secondary" type="button" onClick={printKot} disabled={!cart.length || !canCreateOrder || !canPrintKot}><Printer size={18} /> Print KOT</button>
+            <button className="button primary" type="button" onClick={printBill} disabled={!cart.length || !canCreateOrder || !canPrintBill}><ReceiptText size={18} /> Print bill</button>
           </div>
         </aside>
       </section>

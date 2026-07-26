@@ -9,7 +9,9 @@ interface OrdersPageProps {
   currency: string
   restaurantName: string
   branchName: string
-  canCreate: boolean
+  canEdit: boolean
+  canPrintKot: boolean
+  canPrintBill: boolean
   onUpdateOrder: (order: OngoingOrder) => void
   onCompleteOrder: (orderId: string, sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => void
   onNotify: (message: string) => void
@@ -17,7 +19,7 @@ interface OrdersPageProps {
 
 const tableOptions = Array.from({ length: 20 }, (_, index) => `Table ${String(index + 1).padStart(2, '0')}`)
 
-export function OrdersPage({ orders, currency, restaurantName, branchName, canCreate, onUpdateOrder, onCompleteOrder, onNotify }: OrdersPageProps) {
+export function OrdersPage({ orders, currency, restaurantName, branchName, canEdit, canPrintKot, canPrintBill, onUpdateOrder, onCompleteOrder, onNotify }: OrdersPageProps) {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(() => orders[0]?.id ?? null)
   const selectedOrder = useMemo(() => orders.find((order) => order.id === selectedOrderId) ?? null, [orders, selectedOrderId])
 
@@ -30,7 +32,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canCr
   }, [orders, selectedOrderId])
 
   const updateOrder = (changes: Partial<OngoingOrder>) => {
-    if (!selectedOrder) return
+    if (!selectedOrder || !canEdit) return
     const lines = changes.lines ?? selectedOrder.lines
     const subtotal = lines.reduce((sum, line) => sum + line.price * line.quantity, 0)
     const requestedDiscount = changes.discount ?? selectedOrder.discount
@@ -47,7 +49,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canCr
   }
 
   const changeQuantity = (itemId: string, change: number) => {
-    if (!selectedOrder) return
+    if (!selectedOrder || !canEdit) return
     const lines = selectedOrder.lines
       .map((line) => line.itemId === itemId ? { ...line, quantity: line.quantity + change } : line)
       .filter((line) => line.quantity > 0)
@@ -55,6 +57,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canCr
   }
 
   const printKot = () => {
+    if (!canPrintKot) return onNotify('You do not have permission to print a KOT.')
     if (!selectedOrder?.lines.length) return onNotify('This order has no food items.')
     const printed = printKotReceipt({
       restaurantName,
@@ -69,7 +72,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canCr
   }
 
   const printBill = () => {
-    if (!canCreate) return onNotify('You do not have permission to create a sale.')
+    if (!canPrintBill) return onNotify('You do not have permission to print a bill.')
     if (!selectedOrder?.lines.length) return onNotify('This order has no food items.')
     const printed = printBillReceipt({
       restaurantName,
@@ -115,20 +118,20 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canCr
         {selectedOrder && <aside className="sales-summary-card orders-summary-card">
           <div className="sales-summary-header"><div><span className="eyebrow">Order #{String(selectedOrder.orderNumber).padStart(4, '0')}</span><h2>Bill summary</h2></div><span className="order-status-pill"><ClipboardCheck size={14} /> {selectedOrder.status}</span></div>
 
-          <label className="field sales-table-selector"><span>Table</span><select value={selectedOrder.tableNumber} onChange={(event) => updateOrder({ tableNumber: event.target.value })}>{tableOptions.map((table) => <option value={table} key={table}>{table}</option>)}</select></label>
+          <label className="field sales-table-selector"><span>Table</span><select value={selectedOrder.tableNumber} onChange={(event) => updateOrder({ tableNumber: event.target.value })} disabled={!canEdit}>{tableOptions.map((table) => <option value={table} key={table}>{table}</option>)}</select></label>
 
           <div className="sales-cart-lines">
             {selectedOrder.lines.map((line, index) => <div className="sales-cart-line" key={line.itemId}>
               <span className="sales-cart-number">{String(index + 1).padStart(2, '0')}</span>
               <div><strong>{line.name}</strong><small>{formatCurrency(line.price, currency)} × {line.quantity}</small></div>
               <strong>{formatCurrency(line.price * line.quantity, currency)}</strong>
-              <div className="sales-cart-controls"><button type="button" onClick={() => changeQuantity(line.itemId, -1)}><Minus size={13} /></button><span>{line.quantity}</span><button type="button" onClick={() => changeQuantity(line.itemId, 1)}><Plus size={13} /></button></div>
+              <div className="sales-cart-controls"><button type="button" onClick={() => changeQuantity(line.itemId, -1)} disabled={!canEdit}><Minus size={13} /></button><span>{line.quantity}</span><button type="button" onClick={() => changeQuantity(line.itemId, 1)} disabled={!canEdit}><Plus size={13} /></button></div>
             </div>)}
           </div>
 
           <div className="sales-bill-fields">
-            <label className="field"><span>Discount amount</span><input type="number" min="0" max={selectedOrder.subtotal} step="1" value={selectedOrder.discount || ''} onChange={(event) => updateOrder({ discount: Number(event.target.value) || 0 })} placeholder="0" /></label>
-            <label className="field"><span>Payment method</span><select value={selectedOrder.paymentMethod} onChange={(event) => updateOrder({ paymentMethod: event.target.value as PaymentMethod })}><option>Cash</option><option>Card</option><option>Mobile Banking</option><option>Other</option></select></label>
+            <label className="field"><span>Discount amount</span><input type="number" min="0" max={selectedOrder.subtotal} step="1" value={selectedOrder.discount || ''} onChange={(event) => updateOrder({ discount: Number(event.target.value) || 0 })} disabled={!canEdit} placeholder="0" /></label>
+            <label className="field"><span>Payment method</span><select value={selectedOrder.paymentMethod} onChange={(event) => updateOrder({ paymentMethod: event.target.value as PaymentMethod })} disabled={!canEdit}><option>Cash</option><option>Card</option><option>Mobile Banking</option><option>Other</option></select></label>
           </div>
 
           <div className="sales-total-box">
@@ -138,8 +141,8 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canCr
           </div>
 
           <div className="sales-print-actions">
-            <button className="button secondary" type="button" onClick={printKot} disabled={!selectedOrder.lines.length}><Printer size={18} /> Print KOT</button>
-            <button className="button primary" type="button" onClick={printBill} disabled={!selectedOrder.lines.length || !canCreate}><ReceiptText size={18} /> Print bill</button>
+            <button className="button secondary" type="button" onClick={printKot} disabled={!selectedOrder.lines.length || !canPrintKot}><Printer size={18} /> Print KOT</button>
+            <button className="button primary" type="button" onClick={printBill} disabled={!selectedOrder.lines.length || !canPrintBill}><ReceiptText size={18} /> Print bill</button>
           </div>
         </aside>}
       </section>}
