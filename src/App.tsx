@@ -248,7 +248,7 @@ function App() {
     if (effectivePage === 'reports') return <ReportsPage sales={state.sales} costs={state.costs} settings={state.settings} canExport={permissions['reports.export']} />
     if (effectivePage === 'users' && isSuperadmin) return <UsersPage users={state.users} currentUserId={currentUser.id} onUsersChange={updateUsers} onNotify={setToast} />
     if (effectivePage === 'settings') return <SettingsPage settings={state.settings} canManageSettings={isSuperadmin || permissions['settings.manage']} isSuperadmin={isSuperadmin} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onSave={saveSettings} onChangeOwnPassword={changeOwnPassword} onSaveDeletionPin={saveOwnDeletionPin} />
-    return <DashboardPage period={period} onPeriodChange={setPeriod} sales={visibleSales} costs={visibleCosts} users={state.users} currency={state.settings.currencyCode} receptionMode={!permissions['dashboard.history']} canExport={permissions['reports.export']} canAddSale={permissions['sales.create']} canAddCost={permissions['costs.create']} canEdit={canEdit} onAddSale={() => openAdd('sale')} onAddCost={() => openAdd('cost')} onEdit={openEdit} onView={openView} onExport={exportCurrentPeriod} />
+    return <DashboardPage period={period} onPeriodChange={setPeriod} sales={visibleSales} costs={visibleCosts} users={state.users} currency={state.settings.currencyCode} receptionMode={!permissions['dashboard.history']} canExport={permissions['reports.export']} canAddSale={permissions['sales.create']} canAddCost={permissions['costs.create']} canEdit={canEdit} onAddSale={() => setPage('sales')} onAddCost={() => setPage('costs')} onEdit={openEdit} onView={openView} onExport={exportCurrentPeriod} />
   })()
 
   return (
