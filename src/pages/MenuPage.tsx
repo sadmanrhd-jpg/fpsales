@@ -119,6 +119,22 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
     onNotify('Menu item deleted.')
   }
 
+  const deleteCategory = (category: MenuCategory) => {
+    const affectedItems = items.filter((item) => item.categoryId === category.id)
+    const itemMessage = affectedItems.length
+      ? ` ${affectedItems.length} food item${affectedItems.length === 1 ? '' : 's'} will remain in the menu as uncategorised.`
+      : ''
+    if (!window.confirm(`Delete the ${category.name} category?${itemMessage}`)) return
+
+    onCategoriesChange(categories.filter((current) => current.id !== category.id))
+    if (affectedItems.length) {
+      const now = new Date().toISOString()
+      onItemsChange(items.map((item) => item.categoryId === category.id ? { ...item, categoryId: '', updatedAt: now } : item))
+    }
+    if (selectedCategory === category.id) setSelectedCategory('all')
+    onNotify('Menu category deleted.')
+  }
+
   return (
     <div className="page-stack menu-management-page">
       <section className="page-heading compact-heading">
@@ -134,7 +150,10 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
           <button type="button" className={`menu-category-tile ${selectedCategory === 'all' ? 'active' : ''}`} onClick={() => setSelectedCategory('all')}><span><Grid2X2 size={25} /></span><strong>All</strong><small>{items.length} items</small></button>
           {categories.map((category, index) => {
             const Icon = categoryIcons[index % categoryIcons.length]
-            return <button type="button" className={`menu-category-tile ${selectedCategory === category.id ? 'active' : ''} ${category.active ? '' : 'inactive'}`} onClick={() => setSelectedCategory(category.id)} key={category.id}><span><Icon size={25} /></span><strong>{category.name}</strong><small>{items.filter((item) => item.categoryId === category.id).length} items</small></button>
+            return <div className="menu-category-card-wrap" key={category.id}>
+              <button type="button" className={`menu-category-tile ${selectedCategory === category.id ? 'active' : ''} ${category.active ? '' : 'inactive'}`} onClick={() => setSelectedCategory(category.id)}><span><Icon size={25} /></span><strong>{category.name}</strong><small>{items.filter((item) => item.categoryId === category.id).length} items</small></button>
+              {canManage && <button type="button" className="menu-category-delete" onClick={() => deleteCategory(category)} aria-label={`Delete ${category.name} category`} title={`Delete ${category.name}`}><Trash2 size={14} /></button>}
+            </div>
           })}
         </div>
       </section>
