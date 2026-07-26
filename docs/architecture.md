@@ -6,11 +6,11 @@ React, TypeScript and Vite provide the interface. Pages are permission aware and
 
 ## Authentication
 
-The current prototype uses PBKDF2 password hashing in the browser and stores only the password salt and derived hash. The initial state contains one superadmin. The superadmin creates all other accounts, grants permissions individually, and controls every password change.
+The current prototype uses PBKDF2 password hashing in the browser and stores only the password salt and derived hash. The initial state contains one superadmin. The superadmin creates all other accounts, grants grouped granular permissions individually, and controls every password change. Login sessions use session storage by default and local storage only when Remember me is selected.
 
 ## Local persistence
 
-`src/lib/storage.ts` is the local data adapter. It stores application data and the current session in browser local storage using version 2 keys. The previous sample data key is not loaded.
+`src/lib/storage.ts` is the local data adapter. It stores application data in browser local storage. Temporary login sessions use browser session storage, while remembered sessions use browser local storage. The previous sample data key is not loaded.
 
 ## Production adapter
 
