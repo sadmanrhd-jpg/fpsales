@@ -1,15 +1,58 @@
-import { allPermissions, defaultState, emptyPermissions, sampleMenuCategories, sampleMenuItems } from '../data/defaults'
-import type { AppState, AppUser, OngoingOrder } from '../types'
+import { allPermissions, defaultState, emptyPermissions, permissionKeys, sampleMenuCategories, sampleMenuItems } from '../data/defaults'
+import type { AppState, AppUser, OngoingOrder, PermissionKey, UserPermissions } from '../types'
 
 const STORAGE_KEY = 'food-pavilion-sales-manager-v2'
-const SESSION_KEY = 'food-pavilion-session-v2'
+const PERSISTENT_SESSION_KEY = 'food-pavilion-session-v2'
+const TEMPORARY_SESSION_KEY = 'food-pavilion-session-temporary-v2'
+
+type StoredPermissions = Partial<UserPermissions> & Record<string, boolean | undefined>
+
+const migratePermissions = (storedPermissions: StoredPermissions | undefined): UserPermissions => {
+  const source = storedPermissions ?? {}
+  const permissions = emptyPermissions()
+
+  permissionKeys.forEach((key) => {
+    if (typeof source[key] === 'boolean') permissions[key] = Boolean(source[key])
+  })
+
+  const hasGranularPermissions = [
+    'dashboard.export',
+    'sales.view24h',
+    'sales.printKot',
+    'orders.view',
+    'costs.view24h',
+    'costs.edit',
+    'menu.categories.create',
+  ].some((key) => Object.prototype.hasOwnProperty.call(source, key))
+
+  if (!hasGranularPermissions) {
+    const grant = (keys: PermissionKey[]) => keys.forEach((key) => { permissions[key] = true })
+
+    if (source['entries.last24h']) grant(['sales.view24h', 'costs.view24h'])
+    if (source['entries.all']) grant(['sales.viewAll', 'costs.viewAll'])
+    if (source['entries.editLimited'] || source['entries.editUnlimited']) grant(['sales.edit', 'costs.edit'])
+    if (source['sales.create']) grant(['sales.create', 'sales.printKot', 'sales.printBill', 'orders.view', 'orders.edit'])
+    if (source['costs.create']) grant(['costs.create'])
+    if (source['reports.export']) grant(['dashboard.export'])
+    if (source['menu.manage']) grant([
+      'menu.categories.create',
+      'menu.categories.remove',
+      'menu.items.create',
+      'menu.items.edit',
+      'menu.items.availability',
+      'menu.items.remove',
+    ])
+  }
+
+  return permissions
+}
 
 const normalizeUser = (user: AppUser): AppUser => ({
   ...user,
   email: user.email.trim().toLowerCase(),
   permissions: user.role === 'superadmin'
     ? allPermissions()
-    : { ...emptyPermissions(), ...(user.permissions ?? {}) },
+    : migratePermissions(user.permissions as StoredPermissions),
 })
 
 const normalizeOrders = (orders: unknown): OngoingOrder[] => Array.isArray(orders)
@@ -55,13 +98,17 @@ export function saveState(state: AppState): void {
 }
 
 export function loadSessionUserId(): string | null {
-  return localStorage.getItem(SESSION_KEY)
+  return sessionStorage.getItem(TEMPORARY_SESSION_KEY) ?? localStorage.getItem(PERSISTENT_SESSION_KEY)
 }
 
-export function saveSessionUserId(userId: string): void {
-  localStorage.setItem(SESSION_KEY, userId)
+export function saveSessionUserId(userId: string, rememberMe: boolean): void {
+  sessionStorage.removeItem(TEMPORARY_SESSION_KEY)
+  localStorage.removeItem(PERSISTENT_SESSION_KEY)
+  if (rememberMe) localStorage.setItem(PERSISTENT_SESSION_KEY, userId)
+  else sessionStorage.setItem(TEMPORARY_SESSION_KEY, userId)
 }
 
 export function clearSession(): void {
-  localStorage.removeItem(SESSION_KEY)
+  sessionStorage.removeItem(TEMPORARY_SESSION_KEY)
+  localStorage.removeItem(PERSISTENT_SESSION_KEY)
 }

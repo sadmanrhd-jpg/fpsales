@@ -2,13 +2,14 @@ import { Eye, EyeOff, LockKeyhole, LogIn, Mail } from 'lucide-react'
 import { useState } from 'react'
 
 interface LoginPageProps {
-  onLogin: (email: string, password: string) => Promise<string | null>
+  onLogin: (email: string, password: string, rememberMe: boolean) => Promise<string | null>
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -16,7 +17,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     event.preventDefault()
     setError('')
     setSubmitting(true)
-    const result = await onLogin(email, password)
+    const result = await onLogin(email, password, rememberMe)
     setSubmitting(false)
     if (result) setError(result)
   }
@@ -42,6 +43,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <span>Password</span>
             <div className="input-with-icon password-input"><LockKeyhole size={18} /><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Enter your password" /><button type="button" className="password-visibility" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
           </label>
+          <label className="remember-me-option"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /><span>Remember me on this device</span></label>
           {error && <p className="form-error login-error">{error}</p>}
           <button className="button primary login-button" type="submit" disabled={submitting || !email.trim() || !password}><LogIn size={18} /> {submitting ? 'Signing in...' : 'Sign in'}</button>
         </form>

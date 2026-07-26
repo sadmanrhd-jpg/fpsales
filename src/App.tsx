@@ -56,10 +56,32 @@ function App() {
   const visiblePages = useMemo(() => {
     if (!currentUser) return [] as PageKey[]
     const pages: PageKey[] = []
-    if (permissions['dashboard.today'] || permissions['dashboard.history']) pages.push('dashboard')
-    if (permissions['sales.create'] || permissions['entries.last24h'] || permissions['entries.all']) pages.push('sales', 'orders')
-    if (permissions['costs.create'] || permissions['entries.last24h'] || permissions['entries.all']) pages.push('costs')
-    if (permissions['menu.view'] || permissions['menu.manage']) pages.push('menu')
+    if (permissions['dashboard.today'] || permissions['dashboard.history'] || permissions['dashboard.export']) pages.push('dashboard')
+    if (
+      permissions['sales.view24h']
+      || permissions['sales.viewAll']
+      || permissions['sales.create']
+      || permissions['sales.edit']
+      || permissions['sales.printKot']
+      || permissions['sales.printBill']
+    ) pages.push('sales')
+    if (permissions['orders.view']) pages.push('orders')
+    if (
+      permissions['costs.view24h']
+      || permissions['costs.viewAll']
+      || permissions['costs.create']
+      || permissions['costs.edit']
+      || permissions['costs.remove']
+    ) pages.push('costs')
+    if (
+      permissions['menu.view']
+      || permissions['menu.categories.create']
+      || permissions['menu.categories.remove']
+      || permissions['menu.items.create']
+      || permissions['menu.items.edit']
+      || permissions['menu.items.availability']
+      || permissions['menu.items.remove']
+    ) pages.push('menu')
     if (permissions['audit.view']) pages.push('history')
     if (permissions['reports.view']) pages.push('reports')
     if (isSuperadmin) pages.push('users')
@@ -76,17 +98,24 @@ function App() {
     if (!permissions['dashboard.history'] && period !== 'daily') setPeriod('daily')
   }, [permissions, period])
 
-  const canViewAllEntries = permissions['entries.all']
-  const canViewRecentEntries = permissions['entries.last24h']
-  const visibleSales = useMemo(() => canViewAllEntries ? state.sales : canViewRecentEntries ? state.sales.filter((entry) => isWithinLast24Hours(entry.occurredAt)) : [], [state.sales, canViewAllEntries, canViewRecentEntries])
-  const visibleCosts = useMemo(() => canViewAllEntries ? state.costs : canViewRecentEntries ? state.costs.filter((entry) => isWithinLast24Hours(entry.occurredAt)) : [], [state.costs, canViewAllEntries, canViewRecentEntries])
+  const visibleSales = useMemo(() => {
+    if (permissions['sales.viewAll']) return state.sales
+    if (permissions['sales.view24h']) return state.sales.filter((entry) => isWithinLast24Hours(entry.occurredAt))
+    return []
+  }, [state.sales, permissions])
 
-  const login = async (email: string, password: string): Promise<string | null> => {
+  const visibleCosts = useMemo(() => {
+    if (permissions['costs.viewAll']) return state.costs
+    if (permissions['costs.view24h']) return state.costs.filter((entry) => isWithinLast24Hours(entry.occurredAt))
+    return []
+  }, [state.costs, permissions])
+
+  const login = async (email: string, password: string, rememberMe: boolean): Promise<string | null> => {
     const user = state.users.find((item) => item.email.toLowerCase() === email.trim().toLowerCase())
     if (!user || !user.active) return 'Invalid email or password.'
     const valid = await verifyPassword(user, password)
     if (!valid) return 'Invalid email or password.'
-    saveSessionUserId(user.id)
+    saveSessionUserId(user.id, rememberMe)
     setCurrentUserId(user.id)
     setPage('dashboard')
     return null
@@ -106,11 +135,11 @@ function App() {
   if (!currentUser) return <LoginPage onLogin={login} />
 
   const canEdit = (entry: FinancialEntry) => {
+    const hasEditPermission = entry.kind === 'sale' ? permissions['sales.edit'] : permissions['costs.edit']
+    if (!hasEditPermission) return false
     if (isSuperadmin) return true
-    if (currentUser.role === 'reception') return permissions['entries.editLimited'] && entry.editCount < 2 && isWithinLast24Hours(entry.occurredAt)
-    if (permissions['entries.editUnlimited']) return true
-    if (permissions['entries.editLimited']) return entry.editCount < 2 && isWithinLast24Hours(entry.occurredAt)
-    return false
+    if (currentUser.role === 'reception') return entry.editCount < 2 && isWithinLast24Hours(entry.occurredAt)
+    return true
   }
 
   const openAdd = (kind: 'sale' | 'cost') => {
@@ -118,12 +147,15 @@ function App() {
     if (kind === 'cost' && !permissions['costs.create']) return
     setModal({ mode: 'add', kind })
   }
-  const openEdit = (entry: FinancialEntry) => { if (canEdit(entry)) setModal({ mode: 'edit', kind: entry.kind, entry }) }
+
+  const openEdit = (entry: FinancialEntry) => {
+    if (canEdit(entry)) setModal({ mode: 'edit', kind: entry.kind, entry })
+  }
+
   const openView = (entry: FinancialEntry) => setModal({ mode: 'view', entry })
 
-
   const requestDeleteCost = (entry: FinancialEntry) => {
-    if (!isSuperadmin || entry.kind !== 'cost') return
+    if (!permissions['costs.remove'] || entry.kind !== 'cost') return
     if (!currentUser.deletionPinHash || !currentUser.deletionPinSalt) {
       setToast('Create your 4 digit deletion PIN in Settings before deleting cost entries.')
       return
@@ -142,7 +174,7 @@ function App() {
 
   const confirmCostDeletion = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!pendingCostDelete || !isSuperadmin) return
+    if (!pendingCostDelete || !permissions['costs.remove']) return
     if (!/^\d{4}$/.test(costDeletionPin)) {
       setCostDeletionError('Enter your 4 digit deletion PIN.')
       return
@@ -201,13 +233,20 @@ function App() {
   }
 
   const exportCurrentPeriod = () => {
-    if (!permissions['reports.export']) return
+    if (!permissions['dashboard.export']) return
     const labels = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' }
     const getStart = () => {
       const date = new Date()
       if (period === 'daily') date.setHours(0, 0, 0, 0)
-      if (period === 'weekly') { const day = date.getDay(); date.setDate(date.getDate() - (day === 0 ? 6 : day - 1)); date.setHours(0, 0, 0, 0) }
-      if (period === 'monthly') { date.setDate(1); date.setHours(0, 0, 0, 0) }
+      if (period === 'weekly') {
+        const day = date.getDay()
+        date.setDate(date.getDate() - (day === 0 ? 6 : day - 1))
+        date.setHours(0, 0, 0, 0)
+      }
+      if (period === 'monthly') {
+        date.setDate(1)
+        date.setHours(0, 0, 0, 0)
+      }
       return date
     }
     const start = getStart().getTime()
@@ -220,12 +259,17 @@ function App() {
     })
   }
 
-  const saveSettings = (settings: AppSettings) => { setState((current) => ({ ...current, settings })); setToast('Settings saved.') }
+  const saveSettings = (settings: AppSettings) => {
+    if (!permissions['settings.manage']) return
+    setState((current) => ({ ...current, settings }))
+    setToast('Settings saved.')
+  }
   const updateUsers = (users: AppState['users']) => setState((current) => ({ ...current, users }))
   const updateMenuCategories = (menuCategories: AppState['menuCategories']) => setState((current) => ({ ...current, menuCategories }))
   const updateMenuItems = (menuItems: AppState['menuItems']) => setState((current) => ({ ...current, menuItems }))
 
   const createOngoingOrder = (draft: Omit<OngoingOrder, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'status'>) => {
+    if (!permissions['sales.create'] || !permissions['sales.printKot']) return
     const now = new Date().toISOString()
     const order: OngoingOrder = {
       ...draft,
@@ -243,10 +287,12 @@ function App() {
   }
 
   const updateOngoingOrder = (order: OngoingOrder) => {
+    if (!permissions['orders.edit']) return
     setState((current) => ({ ...current, orders: current.orders.map((currentOrder) => currentOrder.id === order.id ? order : currentOrder) }))
   }
 
   const completeOrderSale = (sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => {
+    if (!permissions['sales.create'] || !permissions['sales.printBill']) return
     const now = new Date().toISOString()
     const entry: SalesEntry = { ...sale, id: randomId('sale'), kind: 'sale', createdAt: now, createdBy: currentUser.id, editCount: 0 }
     setState((current) => ({ ...current, sales: [entry, ...current.sales] }))
@@ -254,6 +300,7 @@ function App() {
   }
 
   const completeOngoingOrder = (orderId: string, sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => {
+    if (!permissions['sales.printBill']) return
     const now = new Date().toISOString()
     const entry: SalesEntry = { ...sale, id: randomId('sale'), kind: 'sale', createdAt: now, createdBy: currentUser.id, editCount: 0 }
     setState((current) => ({
@@ -290,15 +337,15 @@ function App() {
   const effectivePage = visiblePages.includes(page) ? page : visiblePages[0] ?? 'settings'
   const pageContent = (() => {
     if (noAccess) return <section className="content-card no-access-card"><h1>No permissions assigned</h1><p>Ask the superadmin to grant access to the required modules.</p></section>
-    if (effectivePage === 'sales') return <SalesOrderPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} recentSales={visibleSales} nextOrderNumber={state.nextOrderNumber} canCreate={permissions['sales.create']} onCreateOrder={createOngoingOrder} onCompleteSale={completeOrderSale} onNotify={setToast} />
-    if (effectivePage === 'orders') return <OrdersPage orders={state.orders} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} canCreate={permissions['sales.create']} onUpdateOrder={updateOngoingOrder} onCompleteOrder={completeOngoingOrder} onNotify={setToast} />
-    if (effectivePage === 'costs') return <EntriesPage kind="cost" entries={visibleCosts} users={state.users} currency={state.settings.currencyCode} limitedTo24Hours={!canViewAllEntries} canCreate={permissions['costs.create']} canEdit={canEdit} canDelete={(entry) => isSuperadmin && entry.kind === 'cost'} onCreate={() => openAdd('cost')} onEdit={openEdit} onView={openView} onDelete={requestDeleteCost} />
-    if (effectivePage === 'menu') return <MenuPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} canManage={permissions['menu.manage']} currentUserId={currentUser.id} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onVerifyDeletionPin={verifyOwnDeletionPin} onCategoriesChange={updateMenuCategories} onItemsChange={updateMenuItems} onNotify={setToast} />
+    if (effectivePage === 'sales') return <SalesOrderPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} recentSales={visibleSales} nextOrderNumber={state.nextOrderNumber} canCreateOrder={permissions['sales.create']} canPrintKot={permissions['sales.printKot']} canPrintBill={permissions['sales.printBill']} onCreateOrder={createOngoingOrder} onCompleteSale={completeOrderSale} onNotify={setToast} />
+    if (effectivePage === 'orders') return <OrdersPage orders={state.orders} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} canEdit={permissions['orders.edit']} canPrintKot={permissions['sales.printKot']} canPrintBill={permissions['sales.printBill']} onUpdateOrder={updateOngoingOrder} onCompleteOrder={completeOngoingOrder} onNotify={setToast} />
+    if (effectivePage === 'costs') return <EntriesPage kind="cost" entries={visibleCosts} users={state.users} currency={state.settings.currencyCode} limitedTo24Hours={permissions['costs.view24h'] && !permissions['costs.viewAll']} canCreate={permissions['costs.create']} canEdit={canEdit} canDelete={(entry) => permissions['costs.remove'] && entry.kind === 'cost'} onCreate={() => openAdd('cost')} onEdit={openEdit} onView={openView} onDelete={requestDeleteCost} />
+    if (effectivePage === 'menu') return <MenuPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} canCreateCategory={permissions['menu.categories.create']} canDeleteCategory={permissions['menu.categories.remove']} canCreateItem={permissions['menu.items.create']} canEditItem={permissions['menu.items.edit']} canChangeAvailability={permissions['menu.items.availability']} canDeleteItem={permissions['menu.items.remove']} currentUserId={currentUser.id} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onVerifyDeletionPin={verifyOwnDeletionPin} onCategoriesChange={updateMenuCategories} onItemsChange={updateMenuItems} onNotify={setToast} />
     if (effectivePage === 'history') return <HistoryPage records={state.auditRecords} users={state.users} currency={state.settings.currencyCode} />
     if (effectivePage === 'reports') return <ReportsPage sales={state.sales} costs={state.costs} settings={state.settings} canExport={permissions['reports.export']} />
     if (effectivePage === 'users' && isSuperadmin) return <UsersPage users={state.users} currentUserId={currentUser.id} onUsersChange={updateUsers} onNotify={setToast} />
-    if (effectivePage === 'settings') return <SettingsPage settings={state.settings} canManageSettings={isSuperadmin || permissions['settings.manage']} isSuperadmin={isSuperadmin} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onSave={saveSettings} onChangeOwnPassword={changeOwnPassword} onSaveDeletionPin={saveOwnDeletionPin} />
-    return <DashboardPage period={period} onPeriodChange={setPeriod} sales={visibleSales} costs={visibleCosts} users={state.users} currency={state.settings.currencyCode} receptionMode={!permissions['dashboard.history']} canExport={permissions['reports.export']} canAddSale={permissions['sales.create']} canAddCost={permissions['costs.create']} canEdit={canEdit} canDelete={(entry) => isSuperadmin && entry.kind === 'cost'} onAddSale={() => setPage('sales')} onAddCost={() => setPage('costs')} onEdit={openEdit} onView={openView} onDelete={requestDeleteCost} onExport={exportCurrentPeriod} />
+    if (effectivePage === 'settings') return <SettingsPage settings={state.settings} canManageSettings={permissions['settings.manage']} isSuperadmin={isSuperadmin} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onSave={saveSettings} onChangeOwnPassword={changeOwnPassword} onSaveDeletionPin={saveOwnDeletionPin} />
+    return <DashboardPage period={period} onPeriodChange={setPeriod} sales={visibleSales} costs={visibleCosts} users={state.users} currency={state.settings.currencyCode} receptionMode={!permissions['dashboard.history']} canExport={permissions['dashboard.export']} canAddSale={permissions['sales.create']} canAddCost={permissions['costs.create']} canEdit={canEdit} canDelete={(entry) => permissions['costs.remove'] && entry.kind === 'cost'} onAddSale={() => setPage('sales')} onAddCost={() => setPage('costs')} onEdit={openEdit} onView={openView} onDelete={requestDeleteCost} onExport={exportCurrentPeriod} />
   })()
 
   return (
@@ -308,7 +355,7 @@ function App() {
       {modal?.mode === 'edit' && modal.kind && modal.entry && <Modal title={`Edit ${modal.kind}`} onClose={() => setModal(null)}><EntryForm kind={modal.kind} entry={modal.entry} requireReason onSubmit={editEntry} onCancel={() => setModal(null)} /></Modal>}
       {modal?.mode === 'view' && modal.entry && <Modal title="Entry details" onClose={() => setModal(null)}><EntryDetails entry={modal.entry} users={state.users} currency={state.settings.currencyCode} /></Modal>}
       {pendingCostDelete && <Modal title="Confirm cost deletion" onClose={closeCostDeleteModal}><form className="entry-form deletion-confirm-form" onSubmit={confirmCostDeletion}>
-        <div className="deletion-warning"><ShieldCheck size={24} /><div><strong>Delete this cost entry?</strong><p>{pendingCostDelete.category}: {pendingCostDelete.description}. This action requires the Superadmin deletion PIN.</p></div></div>
+        <div className="deletion-warning"><ShieldCheck size={24} /><div><strong>Delete this cost entry?</strong><p>{pendingCostDelete.category}: {pendingCostDelete.description}. This action requires your deletion PIN.</p></div></div>
         <label className="field"><span>Deletion PIN</span><input type="password" inputMode="numeric" maxLength={4} value={costDeletionPin} onChange={(event) => { setCostDeletionPin(event.target.value.replace(/\D/g, '').slice(0, 4)); setCostDeletionError('') }} autoComplete="off" placeholder="Enter 4 digits" autoFocus /></label>
         {costDeletionError && <p className="form-error">{costDeletionError}</p>}
         <div className="form-actions"><button className="button secondary" type="button" onClick={closeCostDeleteModal}>Cancel</button><button className="button deletion-button" type="submit" disabled={checkingCostDeletionPin || costDeletionPin.length !== 4}><Trash2 size={17} /> {checkingCostDeletionPin ? 'Checking...' : 'Delete cost'}</button></div>

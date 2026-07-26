@@ -1,7 +1,7 @@
-import { Eye, EyeOff, KeyRound, Plus, Save, ShieldCheck, UserRoundCheck } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, LockKeyhole, Plus, Save, ShieldCheck, UserRoundCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
-import { emptyPermissions, permissionKeys, permissionLabels } from '../data/defaults'
+import { emptyPermissions, permissionGroups, permissionLabels } from '../data/defaults'
 import { createPasswordCredential } from '../lib/auth'
 import { randomId } from '../lib/utils'
 import type { AppUser, PermissionKey, Role, UserPermissions } from '../types'
@@ -14,6 +14,42 @@ interface UsersPageProps {
   currentUserId: string
   onUsersChange: (users: AppUser[]) => void
   onNotify: (message: string) => void
+}
+
+
+interface PermissionSelectorProps {
+  permissions: UserPermissions
+  onToggle: (permission: PermissionKey) => void
+}
+
+const superadminOnlyFunctions = [
+  'Create user accounts',
+  'Assign roles and permissions',
+  'Activate or deactivate user accounts',
+  'Reset any user password',
+  'Change the Superadmin password',
+]
+
+function PermissionSelector({ permissions, onToggle }: PermissionSelectorProps) {
+  return (
+    <div className="permission-group-list">
+      {permissionGroups.map((group) => (
+        <section className="permission-group" key={group.id}>
+          <div className="permission-group-heading"><strong>{group.label}</strong><span>{group.description}</span></div>
+          <div className="permission-checkbox-grid">
+            {group.permissions.map((permission) => <label className="permission-check" key={permission}><input type="checkbox" checked={permissions[permission]} onChange={() => onToggle(permission)} /><span>{permissionLabels[permission]}</span></label>)}
+          </div>
+        </section>
+      ))}
+      <section className="permission-group fixed-permission-group">
+        <div className="permission-group-heading"><strong><LockKeyhole size={16} /> Superadmin only controls</strong><span>These security functions are permanently restricted to the Superadmin and cannot be assigned.</span></div>
+        <div className="fixed-permission-list">{superadminOnlyFunctions.map((item) => <span key={item}><LockKeyhole size={14} /> {item}</span>)}</div>
+      </section>
+      <section className="permission-group personal-permission-group">
+        <div className="permission-group-heading"><strong>Personal account security</strong><span>Every active signed in user can create or change their own 4 digit deletion PIN from Settings.</span></div>
+      </section>
+    </div>
+  )
 }
 
 interface PasswordFieldsProps {
@@ -140,9 +176,7 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
             </div>
             <div className="permission-selector">
               <div><strong>Permissions</strong><span>Nothing is granted automatically. Select only what this user needs.</span></div>
-              <div className="permission-checkbox-grid">
-                {permissionKeys.map((permission) => <label className="permission-check" key={permission}><input type="checkbox" checked={selectedPermissions[permission]} onChange={() => toggleCreatePermission(permission)} /><span>{permissionLabels[permission]}</span></label>)}
-              </div>
+              <PermissionSelector permissions={selectedPermissions} onToggle={toggleCreatePermission} />
             </div>
             {error && <p className="form-error">{error}</p>}
             <div className="form-actions"><button className="button secondary" type="button" onClick={() => { setShowForm(false); resetCreateForm() }}>Cancel</button><button className="button primary" type="submit" disabled={saving}><Save size={17} /> {saving ? 'Creating...' : 'Create user'}</button></div>
@@ -168,10 +202,10 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
         <p className="permission-note"><UserRoundCheck size={16} /> Only the superadmin can create accounts, assign permissions, deactivate users, or change passwords.</p>
       </section>
 
-      {editingUser && <Modal title={`Access for ${editingUser.name}`} onClose={closeAccessModal}><div className="access-modal-content">
+      {editingUser && <Modal title={`Access for ${editingUser.name}`} onClose={closeAccessModal} wide><div className="access-modal-content">
         {editingUser.role === 'superadmin' ? <p className="locked-access-note">The superadmin always has complete system access and cannot be restricted.</p> : <>
           <label className="field"><span>Role label</span><select value={editingUser.role} onChange={(event) => updateUser(editingUser.id, { role: event.target.value as Role })}>{assignableRoles.map((item) => <option value={item} key={item}>{roleName(item)}</option>)}</select></label>
-          <div className="permission-checkbox-grid modal-permissions">{permissionKeys.map((permission) => <label className="permission-check" key={permission}><input type="checkbox" checked={editingUser.permissions[permission]} onChange={() => toggleExistingPermission(permission)} /><span>{permissionLabels[permission]}</span></label>)}</div>
+          <div className="modal-permissions"><PermissionSelector permissions={editingUser.permissions} onToggle={toggleExistingPermission} /></div>
         </>}
         <div className="form-actions"><button className="button primary" type="button" onClick={closeAccessModal}>Done</button></div>
       </div></Modal>}

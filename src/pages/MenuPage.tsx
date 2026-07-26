@@ -23,7 +23,12 @@ interface MenuPageProps {
   categories: MenuCategory[]
   items: MenuItem[]
   currency: string
-  canManage: boolean
+  canCreateCategory: boolean
+  canDeleteCategory: boolean
+  canCreateItem: boolean
+  canEditItem: boolean
+  canChangeAvailability: boolean
+  canDeleteItem: boolean
   currentUserId: string
   hasDeletionPin: boolean
   onVerifyDeletionPin: (pin: string) => Promise<boolean>
@@ -76,7 +81,7 @@ function MenuItemForm({ categories, item, onSubmit, onCancel }: MenuItemFormProp
   )
 }
 
-export function MenuPage({ categories, items, currency, canManage, currentUserId, hasDeletionPin, onVerifyDeletionPin, onCategoriesChange, onItemsChange, onNotify }: MenuPageProps) {
+export function MenuPage({ categories, items, currency, canCreateCategory, canDeleteCategory, canCreateItem, canEditItem, canChangeAvailability, canDeleteItem, currentUserId, hasDeletionPin, onVerifyDeletionPin, onCategoriesChange, onItemsChange, onNotify }: MenuPageProps) {
   const [query, setQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [categoryName, setCategoryName] = useState('')
@@ -97,6 +102,7 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
 
   const addCategory = (event: React.FormEvent) => {
     event.preventDefault()
+    if (!canCreateCategory) return
     const cleanName = categoryName.trim()
     if (!cleanName) return
     if (categories.some((category) => category.name.toLowerCase() === cleanName.toLowerCase())) return onNotify('A category with this name already exists.')
@@ -107,6 +113,7 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
   }
 
   const saveItem = (data: Pick<MenuItem, 'name' | 'categoryId' | 'description' | 'price' | 'available'>) => {
+    if (editingItem ? !canEditItem : !canCreateItem) return
     const now = new Date().toISOString()
     if (editingItem) {
       onItemsChange(items.map((item) => item.id === editingItem.id ? { ...item, ...data, updatedAt: now } : item))
@@ -120,11 +127,14 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
   }
 
   const toggleAvailability = (item: MenuItem) => {
+    if (!canChangeAvailability) return
     onItemsChange(items.map((current) => current.id === item.id ? { ...current, available: !current.available, updatedAt: new Date().toISOString() } : current))
     onNotify(item.available ? 'Menu item marked unavailable.' : 'Menu item marked available.')
   }
 
   const requestDelete = (target: PendingDelete) => {
+    if (target.kind === 'category' && !canDeleteCategory) return
+    if (target.kind === 'item' && !canDeleteItem) return
     if (!hasDeletionPin) {
       onNotify('Create your 4 digit deletion PIN in Settings before deleting saved data.')
       return
@@ -179,10 +189,10 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
     <div className="page-stack menu-management-page">
       <section className="page-heading compact-heading">
         <div><span className="eyebrow">Menu management</span><h1>Food menu</h1><p>Manage categories, prices and availability. These foods appear directly on the Sales page.</p></div>
-        {canManage && <div className="heading-actions"><button className="button secondary" type="button" onClick={() => setShowCategoryForm((value) => !value)}><Plus size={18} /> Add category</button><button className="button primary" type="button" onClick={() => { setEditingItem(null); setShowItemForm(true) }}><Plus size={18} /> Add menu item</button></div>}
+        {(canCreateCategory || canCreateItem) && <div className="heading-actions">{canCreateCategory && <button className="button secondary" type="button" onClick={() => setShowCategoryForm((value) => !value)}><Plus size={18} /> Add category</button>}{canCreateItem && <button className="button primary" type="button" onClick={() => { setEditingItem(null); setShowItemForm(true) }}><Plus size={18} /> Add menu item</button>}</div>}
       </section>
 
-      {showCategoryForm && canManage && <section className="content-card inline-form-card"><form className="category-form" onSubmit={addCategory}><label className="field"><span>Category name</span><input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Example: Seafood" autoFocus /></label><button className="button primary" type="submit"><Check size={17} /> Save category</button></form></section>}
+      {showCategoryForm && canCreateCategory && <section className="content-card inline-form-card"><form className="category-form" onSubmit={addCategory}><label className="field"><span>Category name</span><input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Example: Seafood" autoFocus /></label><button className="button primary" type="submit"><Check size={17} /> Save category</button></form></section>}
 
       <section className="menu-category-board">
         <div className="menu-section-title"><div><span className="eyebrow">Categories</span><h2>Browse foods by category</h2></div><span className="section-count">{categories.length} categories</span></div>
@@ -192,7 +202,7 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
             const Icon = categoryIcons[index % categoryIcons.length]
             return <div className="menu-category-card-wrap" key={category.id}>
               <button type="button" className={`menu-category-tile ${selectedCategory === category.id ? 'active' : ''} ${category.active ? '' : 'inactive'}`} onClick={() => setSelectedCategory(category.id)}><span><Icon size={25} /></span><strong>{category.name}</strong><small>{items.filter((item) => item.categoryId === category.id).length} items</small></button>
-              {canManage && <button type="button" className="menu-category-delete" onClick={() => requestDelete({ kind: 'category', category })} aria-label={`Delete ${category.name} category`} title={`Delete ${category.name}`}><Trash2 size={14} /></button>}
+              {canDeleteCategory && <button type="button" className="menu-category-delete" onClick={() => requestDelete({ kind: 'category', category })} aria-label={`Delete ${category.name} category`} title={`Delete ${category.name}`}><Trash2 size={14} /></button>}
             </div>
           })}
         </div>
@@ -204,18 +214,18 @@ export function MenuPage({ categories, items, currency, canManage, currentUserId
           <div className="menu-table-tools"><div className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search menu items" /></div><span className="section-count">{filteredItems.length} items</span></div>
         </div>
 
-        {!filteredItems.length ? <EmptyState title={items.length ? 'No matching menu items' : 'No menu items added yet'} description={items.length ? 'Try a different search term or category.' : 'Use Add category and Add menu item to build the restaurant menu.'} /> : <div className="table-shell"><table className="menu-management-table"><thead><tr><th>Product</th><th>Product name</th><th>Item ID</th><th>Category</th><th>Price</th><th>Availability</th>{canManage && <th>Actions</th>}</tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}>
+        {!filteredItems.length ? <EmptyState title={items.length ? 'No matching menu items' : 'No menu items added yet'} description={items.length ? 'Try a different search term or category.' : 'Use Add category and Add menu item to build the restaurant menu.'} /> : <div className="table-shell"><table className="menu-management-table"><thead><tr><th>Product</th><th>Product name</th><th>Item ID</th><th>Category</th><th>Price</th><th>Availability</th>{(canEditItem || canDeleteItem) && <th>Actions</th>}</tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}>
           <td><span className="menu-product-icon"><UtensilsCrossed size={20} /></span></td>
           <td><div className="menu-product-copy"><strong>{item.name}</strong><span>{item.description || 'No description added.'}</span></div></td>
           <td><code>{item.id.replace('menu-', '').slice(0, 12).toUpperCase()}</code></td>
           <td>{categoryMap.get(item.categoryId) ?? 'Uncategorised'}</td>
           <td className="menu-price-cell">{formatCurrency(item.price, currency)}</td>
-          <td><button type="button" className={`availability-badge table-badge ${item.available ? 'available' : ''}`} onClick={() => canManage && toggleAvailability(item)} disabled={!canManage}>{item.available ? 'In stock' : 'Unavailable'}</button></td>
-          {canManage && <td className="actions-cell"><button className="icon-button subtle" type="button" onClick={() => { setEditingItem(item); setShowItemForm(true) }} aria-label="Edit menu item"><Edit3 size={16} /></button><button className="icon-button subtle danger-text" type="button" onClick={() => requestDelete({ kind: 'item', item })} aria-label="Delete menu item"><Trash2 size={16} /></button></td>}
+          <td><button type="button" className={`availability-badge table-badge ${item.available ? 'available' : ''}`} onClick={() => toggleAvailability(item)} disabled={!canChangeAvailability}>{item.available ? 'In stock' : 'Unavailable'}</button></td>
+          {(canEditItem || canDeleteItem) && <td className="actions-cell">{canEditItem && <button className="icon-button subtle" type="button" onClick={() => { setEditingItem(item); setShowItemForm(true) }} aria-label="Edit menu item"><Edit3 size={16} /></button>}{canDeleteItem && <button className="icon-button subtle danger-text" type="button" onClick={() => requestDelete({ kind: 'item', item })} aria-label="Delete menu item"><Trash2 size={16} /></button>}</td>}
         </tr>)}</tbody></table></div>}
       </section>
 
-      {showItemForm && canManage && <Modal title={editingItem ? 'Edit menu item' : 'Add menu item'} onClose={() => { setShowItemForm(false); setEditingItem(null) }}><MenuItemForm categories={categories} item={editingItem ?? undefined} onSubmit={saveItem} onCancel={() => { setShowItemForm(false); setEditingItem(null) }} /></Modal>}
+      {showItemForm && ((editingItem && canEditItem) || (!editingItem && canCreateItem)) && <Modal title={editingItem ? 'Edit menu item' : 'Add menu item'} onClose={() => { setShowItemForm(false); setEditingItem(null) }}><MenuItemForm categories={categories} item={editingItem ?? undefined} onSubmit={saveItem} onCancel={() => { setShowItemForm(false); setEditingItem(null) }} /></Modal>}
 
       {pendingDelete && <Modal title="Confirm deletion" onClose={closeDeleteModal}><form className="entry-form deletion-confirm-form" onSubmit={confirmDeletion}>
         <div className="deletion-warning"><ShieldCheck size={24} /><div><strong>Delete {deleteName}?</strong><p>This action requires your personal 4 digit deletion PIN.{affectedCategoryItems ? ` ${affectedCategoryItems} food item${affectedCategoryItems === 1 ? '' : 's'} will remain as uncategorised.` : ''}</p></div></div>
