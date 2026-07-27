@@ -16,7 +16,7 @@ import {
 import { useMemo, useState } from 'react'
 import { EmptyState } from '../components/EmptyState'
 import { Modal } from '../components/Modal'
-import { formatCurrency, randomId } from '../lib/utils'
+import { formatCurrency } from '../lib/utils'
 import type { MenuCategory, MenuItem } from '../types'
 
 interface MenuPageProps {
@@ -29,18 +29,19 @@ interface MenuPageProps {
   canEditItem: boolean
   canChangeAvailability: boolean
   canDeleteItem: boolean
-  currentUserId: string
   hasDeletionPin: boolean
-  onVerifyDeletionPin: (pin: string) => Promise<boolean>
-  onCategoriesChange: (categories: MenuCategory[]) => void
-  onItemsChange: (items: MenuItem[]) => void
+  onCreateCategory: (name: string) => Promise<string | null>
+  onDeleteCategory: (id: string, pin: string) => Promise<string | null>
+  onSaveItem: (id: string | null, data: Pick<MenuItem, 'name' | 'categoryId' | 'description' | 'price' | 'available'>) => Promise<string | null>
+  onToggleAvailability: (item: MenuItem) => Promise<string | null>
+  onDeleteItem: (id: string, pin: string) => Promise<string | null>
   onNotify: (message: string) => void
 }
 
 interface MenuItemFormProps {
   categories: MenuCategory[]
   item?: MenuItem
-  onSubmit: (data: Pick<MenuItem, 'name' | 'categoryId' | 'description' | 'price' | 'available'>) => void
+  onSubmit: (data: Pick<MenuItem, 'name' | 'categoryId' | 'description' | 'price' | 'available'>) => Promise<string | null>
   onCancel: () => void
 }
 
@@ -57,13 +58,17 @@ function MenuItemForm({ categories, item, onSubmit, onCancel }: MenuItemFormProp
   const [price, setPrice] = useState(item ? String(item.price) : '')
   const [available, setAvailable] = useState(item?.available ?? true)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     const numericPrice = Number(price)
     if (!name.trim()) return setError('Enter the menu item name.')
     if (!Number.isFinite(numericPrice) || numericPrice < 0) return setError('Enter a valid price.')
-    onSubmit({ name: name.trim(), categoryId, description: description.trim(), price: numericPrice, available })
+    setSaving(true)
+    const result = await onSubmit({ name: name.trim(), categoryId, description: description.trim(), price: numericPrice, available })
+    setSaving(false)
+    if (result) setError(result)
   }
 
   return (
@@ -76,12 +81,12 @@ function MenuItemForm({ categories, item, onSubmit, onCancel }: MenuItemFormProp
         <label className="field field-full"><span>Description</span><textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional food details" /></label>
       </div>
       {error && <p className="form-error">{error}</p>}
-      <div className="form-actions"><button className="button secondary" type="button" onClick={onCancel}>Cancel</button><button className="button primary" type="submit">{item ? 'Save changes' : 'Add menu item'}</button></div>
+      <div className="form-actions"><button className="button secondary" type="button" onClick={onCancel}>Cancel</button><button className="button primary" type="submit" disabled={saving}>{saving ? 'Saving...' : item ? 'Save changes' : 'Add menu item'}</button></div>
     </form>
   )
 }
 
-export function MenuPage({ categories, items, currency, canCreateCategory, canDeleteCategory, canCreateItem, canEditItem, canChangeAvailability, canDeleteItem, currentUserId, hasDeletionPin, onVerifyDeletionPin, onCategoriesChange, onItemsChange, onNotify }: MenuPageProps) {
+export function MenuPage({ categories, items, currency, canCreateCategory, canDeleteCategory, canCreateItem, canEditItem, canChangeAvailability, canDeleteItem, hasDeletionPin, onCreateCategory, onDeleteCategory, onSaveItem, onToggleAvailability, onDeleteItem, onNotify }: MenuPageProps) {
   const [query, setQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [categoryName, setCategoryName] = useState('')
@@ -92,6 +97,7 @@ export function MenuPage({ categories, items, currency, canCreateCategory, canDe
   const [deletionPin, setDeletionPin] = useState('')
   const [deletionError, setDeletionError] = useState('')
   const [checkingPin, setCheckingPin] = useState(false)
+  const [savingCategory, setSavingCategory] = useState(false)
 
   const categoryMap = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories])
   const filteredItems = useMemo(() => items.filter((item) => {
@@ -100,35 +106,35 @@ export function MenuPage({ categories, items, currency, canCreateCategory, canDe
     return matchesCategory && matchesQuery
   }), [items, query, categoryMap, selectedCategory])
 
-  const addCategory = (event: React.FormEvent) => {
+  const addCategory = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!canCreateCategory) return
     const cleanName = categoryName.trim()
     if (!cleanName) return
     if (categories.some((category) => category.name.toLowerCase() === cleanName.toLowerCase())) return onNotify('A category with this name already exists.')
-    onCategoriesChange([...categories, { id: randomId('category'), name: cleanName, active: true, createdAt: new Date().toISOString(), createdBy: currentUserId }])
+    setSavingCategory(true)
+    const result = await onCreateCategory(cleanName)
+    setSavingCategory(false)
+    if (result) return onNotify(result)
     setCategoryName('')
     setShowCategoryForm(false)
     onNotify('Menu category added.')
   }
 
-  const saveItem = (data: Pick<MenuItem, 'name' | 'categoryId' | 'description' | 'price' | 'available'>) => {
-    if (editingItem ? !canEditItem : !canCreateItem) return
-    const now = new Date().toISOString()
-    if (editingItem) {
-      onItemsChange(items.map((item) => item.id === editingItem.id ? { ...item, ...data, updatedAt: now } : item))
-      onNotify('Menu item updated.')
-    } else {
-      onItemsChange([{ ...data, id: randomId('menu'), createdAt: now, updatedAt: now, createdBy: currentUserId }, ...items])
-      onNotify('Menu item added.')
-    }
+  const saveItem = async (data: Pick<MenuItem, 'name' | 'categoryId' | 'description' | 'price' | 'available'>) => {
+    if (editingItem ? !canEditItem : !canCreateItem) return 'You do not have permission to save this menu item.'
+    const result = await onSaveItem(editingItem?.id ?? null, data)
+    if (result) return result
+    onNotify(editingItem ? 'Menu item updated.' : 'Menu item added.')
     setEditingItem(null)
     setShowItemForm(false)
+    return null
   }
 
-  const toggleAvailability = (item: MenuItem) => {
+  const toggleAvailability = async (item: MenuItem) => {
     if (!canChangeAvailability) return
-    onItemsChange(items.map((current) => current.id === item.id ? { ...current, available: !current.available, updatedAt: new Date().toISOString() } : current))
+    const result = await onToggleAvailability(item)
+    if (result) return onNotify(result)
     onNotify(item.available ? 'Menu item marked unavailable.' : 'Menu item marked available.')
   }
 
@@ -151,34 +157,19 @@ export function MenuPage({ categories, items, currency, canCreateCategory, canDe
     setCheckingPin(false)
   }
 
-  const applyDeletion = () => {
-    if (!pendingDelete) return
-    if (pendingDelete.kind === 'item') {
-      onItemsChange(items.filter((current) => current.id !== pendingDelete.item.id))
-      onNotify('Menu item deleted.')
-      return
-    }
-
-    const category = pendingDelete.category
-    const affectedItems = items.filter((item) => item.categoryId === category.id)
-    onCategoriesChange(categories.filter((current) => current.id !== category.id))
-    if (affectedItems.length) {
-      const now = new Date().toISOString()
-      onItemsChange(items.map((item) => item.categoryId === category.id ? { ...item, categoryId: '', updatedAt: now } : item))
-    }
-    if (selectedCategory === category.id) setSelectedCategory('all')
-    onNotify('Menu category deleted.')
-  }
-
   const confirmDeletion = async (event: React.FormEvent) => {
     event.preventDefault()
     setDeletionError('')
     if (!/^\d{4}$/.test(deletionPin)) return setDeletionError('Enter your 4 digit deletion PIN.')
+    if (!pendingDelete) return
     setCheckingPin(true)
-    const valid = await onVerifyDeletionPin(deletionPin)
+    const result = pendingDelete.kind === 'item'
+      ? await onDeleteItem(pendingDelete.item.id, deletionPin)
+      : await onDeleteCategory(pendingDelete.category.id, deletionPin)
     setCheckingPin(false)
-    if (!valid) return setDeletionError('The deletion PIN is incorrect.')
-    applyDeletion()
+    if (result) return setDeletionError(result)
+    if (pendingDelete.kind === 'category' && selectedCategory === pendingDelete.category.id) setSelectedCategory('all')
+    onNotify(pendingDelete.kind === 'item' ? 'Menu item deleted.' : 'Menu category deleted.')
     closeDeleteModal()
   }
 
@@ -192,7 +183,7 @@ export function MenuPage({ categories, items, currency, canCreateCategory, canDe
         {(canCreateCategory || canCreateItem) && <div className="heading-actions">{canCreateCategory && <button className="button secondary" type="button" onClick={() => setShowCategoryForm((value) => !value)}><Plus size={18} /> Add category</button>}{canCreateItem && <button className="button primary" type="button" onClick={() => { setEditingItem(null); setShowItemForm(true) }}><Plus size={18} /> Add menu item</button>}</div>}
       </section>
 
-      {showCategoryForm && canCreateCategory && <section className="content-card inline-form-card"><form className="category-form" onSubmit={addCategory}><label className="field"><span>Category name</span><input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Example: Seafood" autoFocus /></label><button className="button primary" type="submit"><Check size={17} /> Save category</button></form></section>}
+      {showCategoryForm && canCreateCategory && <section className="content-card inline-form-card"><form className="category-form" onSubmit={addCategory}><label className="field"><span>Category name</span><input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Example: Seafood" autoFocus /></label><button className="button primary" type="submit" disabled={savingCategory}><Check size={17} /> {savingCategory ? 'Saving...' : 'Save category'}</button></form></section>}
 
       <section className="menu-category-board">
         <div className="menu-section-title"><div><span className="eyebrow">Categories</span><h2>Browse foods by category</h2></div><span className="section-count">{categories.length} categories</span></div>
@@ -217,10 +208,10 @@ export function MenuPage({ categories, items, currency, canCreateCategory, canDe
         {!filteredItems.length ? <EmptyState title={items.length ? 'No matching menu items' : 'No menu items added yet'} description={items.length ? 'Try a different search term or category.' : 'Use Add category and Add menu item to build the restaurant menu.'} /> : <div className="table-shell"><table className="menu-management-table"><thead><tr><th>Product</th><th>Product name</th><th>Item ID</th><th>Category</th><th>Price</th><th>Availability</th>{(canEditItem || canDeleteItem) && <th>Actions</th>}</tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}>
           <td><span className="menu-product-icon"><UtensilsCrossed size={20} /></span></td>
           <td><div className="menu-product-copy"><strong>{item.name}</strong><span>{item.description || 'No description added.'}</span></div></td>
-          <td><code>{item.id.replace('menu-', '').slice(0, 12).toUpperCase()}</code></td>
+          <td><code>{item.id.slice(0, 12).toUpperCase()}</code></td>
           <td>{categoryMap.get(item.categoryId) ?? 'Uncategorised'}</td>
           <td className="menu-price-cell">{formatCurrency(item.price, currency)}</td>
-          <td><button type="button" className={`availability-badge table-badge ${item.available ? 'available' : ''}`} onClick={() => toggleAvailability(item)} disabled={!canChangeAvailability}>{item.available ? 'In stock' : 'Unavailable'}</button></td>
+          <td><button type="button" className={`availability-badge table-badge ${item.available ? 'available' : ''}`} onClick={() => void toggleAvailability(item)} disabled={!canChangeAvailability}>{item.available ? 'In stock' : 'Unavailable'}</button></td>
           {(canEditItem || canDeleteItem) && <td className="actions-cell">{canEditItem && <button className="icon-button subtle" type="button" onClick={() => { setEditingItem(item); setShowItemForm(true) }} aria-label="Edit menu item"><Edit3 size={16} /></button>}{canDeleteItem && <button className="icon-button subtle danger-text" type="button" onClick={() => requestDelete({ kind: 'item', item })} aria-label="Delete menu item"><Trash2 size={16} /></button>}</td>}
         </tr>)}</tbody></table></div>}
       </section>

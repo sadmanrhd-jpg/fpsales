@@ -10,7 +10,7 @@ interface EntryFormProps {
   kind: 'sale' | 'cost'
   entry?: FinancialEntry
   requireReason?: boolean
-  onSubmit: (payload: Omit<SalesEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'> | Omit<CostEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>, reason?: string) => void
+  onSubmit: (payload: Omit<SalesEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'> | Omit<CostEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>, reason?: string) => void | Promise<void>
   onCancel: () => void
 }
 
@@ -27,6 +27,7 @@ export function EntryForm({ kind, entry, requireReason = false, onSubmit, onCanc
   const [attachmentName, setAttachmentName] = useState(entry?.attachmentName ?? '')
   const [attachmentDataUrl, setAttachmentDataUrl] = useState(entry?.attachmentDataUrl ?? '')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const handleFile = (file?: File) => {
     if (!file) return
@@ -43,7 +44,7 @@ export function EntryForm({ kind, entry, requireReason = false, onSubmit, onCanc
     reader.readAsDataURL(file)
   }
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     const numericAmount = Number(amount)
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
@@ -64,10 +65,15 @@ export function EntryForm({ kind, entry, requireReason = false, onSubmit, onCanc
       attachmentName: attachmentName || undefined,
       attachmentDataUrl: attachmentDataUrl || undefined,
     }
-    if (isSale) {
-      onSubmit({ ...base, paymentMethod, note: note.trim() }, reason.trim() || undefined)
-    } else {
-      onSubmit({ ...base, category, description: description.trim() }, reason.trim() || undefined)
+    setSaving(true)
+    try {
+      if (isSale) {
+        await onSubmit({ ...base, paymentMethod, note: note.trim() }, reason.trim() || undefined)
+      } else {
+        await onSubmit({ ...base, category, description: description.trim() }, reason.trim() || undefined)
+      }
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -125,7 +131,7 @@ export function EntryForm({ kind, entry, requireReason = false, onSubmit, onCanc
       {error && <p className="form-error">{error}</p>}
       <div className="form-actions">
         <button type="button" className="button secondary" onClick={onCancel}>Cancel</button>
-        <button type="submit" className="button primary">{entry ? 'Save changes' : `Add ${kind}`}</button>
+        <button type="submit" className="button primary" disabled={saving}>{saving ? 'Saving...' : entry ? 'Save changes' : `Add ${kind}`}</button>
       </div>
     </form>
   )

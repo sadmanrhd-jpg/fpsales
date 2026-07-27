@@ -7,7 +7,7 @@ interface SettingsPageProps {
   canManageSettings: boolean
   isSuperadmin: boolean
   hasDeletionPin: boolean
-  onSave: (settings: AppSettings) => void
+  onSave: (settings: AppSettings) => Promise<string | null>
   onChangeOwnPassword: (currentPassword: string, newPassword: string) => Promise<string | null>
   onSaveDeletionPin: (currentPin: string, newPin: string) => Promise<string | null>
 }
@@ -20,6 +20,8 @@ export function SettingsPage({ settings, canManageSettings, isSuperadmin, hasDel
   const [passwordMessage, setPasswordMessage] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [savingPassword, setSavingPassword] = useState(false)
+  const [settingsError, setSettingsError] = useState('')
+  const [savingSettings, setSavingSettings] = useState(false)
   const [currentPin, setCurrentPin] = useState('')
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
@@ -30,6 +32,14 @@ export function SettingsPage({ settings, canManageSettings, isSuperadmin, hasDel
   useEffect(() => setForm(settings), [settings])
   const update = (key: keyof AppSettings, value: string) => setForm((current) => ({ ...current, [key]: value }))
   const digitsOnly = (value: string) => value.replace(/\D/g, '').slice(0, 4)
+
+  const saveSettings = async () => {
+    setSettingsError('')
+    setSavingSettings(true)
+    const error = await onSave(form)
+    setSavingSettings(false)
+    if (error) setSettingsError(error)
+  }
 
   const changePassword = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -77,7 +87,8 @@ export function SettingsPage({ settings, canManageSettings, isSuperadmin, hasDel
           <label className="field"><span>Timezone</span><input value={form.timezone} onChange={(event) => update('timezone', event.target.value)} /></label>
           <label className="field field-full"><span>Address</span><textarea rows={3} value={form.address} onChange={(event) => update('address', event.target.value)} /></label>
         </div>
-        <div className="form-actions settings-actions"><span /><button className="button primary" type="button" onClick={() => onSave(form)}><Save size={17} /> Save settings</button></div>
+        {settingsError && <p className="form-error">{settingsError}</p>}
+        <div className="form-actions settings-actions"><span /><button className="button primary" type="button" onClick={() => void saveSettings()} disabled={savingSettings}><Save size={17} /> {savingSettings ? 'Saving...' : 'Save settings'}</button></div>
       </section>}
 
       <section className="content-card settings-card security-card deletion-pin-card">

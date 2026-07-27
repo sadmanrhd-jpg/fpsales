@@ -1,6 +1,6 @@
 import { ClipboardCheck, Clock3, Minus, Plus, Printer, ReceiptText, ShoppingBag } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { printBillReceipt, printKotReceipt } from '../lib/receipt'
+import { preparePrintWindow, printBillReceipt, printKotReceipt } from '../lib/receipt'
 import { formatCurrency } from '../lib/utils'
 import type { OngoingOrder, PaymentMethod, SalesEntry } from '../types'
 
@@ -12,8 +12,8 @@ interface OrdersPageProps {
   canEdit: boolean
   canPrintKot: boolean
   canPrintBill: boolean
-  onUpdateOrder: (order: OngoingOrder) => void
-  onCompleteOrder: (orderId: string, sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => void
+  onUpdateOrder: (order: OngoingOrder) => Promise<string | null>
+  onCompleteOrder: (orderId: string, sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => Promise<string | null>
   onNotify: (message: string) => void
 }
 
@@ -31,13 +31,13 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
     if (!orders.some((order) => order.id === selectedOrderId)) setSelectedOrderId(orders[0].id)
   }, [orders, selectedOrderId])
 
-  const updateOrder = (changes: Partial<OngoingOrder>) => {
+  const updateOrder = async (changes: Partial<OngoingOrder>) => {
     if (!selectedOrder || !canEdit) return
     const lines = changes.lines ?? selectedOrder.lines
     const subtotal = lines.reduce((sum, line) => sum + line.price * line.quantity, 0)
     const requestedDiscount = changes.discount ?? selectedOrder.discount
     const discount = Math.max(0, Math.min(requestedDiscount, subtotal))
-    onUpdateOrder({
+    const error = await onUpdateOrder({
       ...selectedOrder,
       ...changes,
       lines,
@@ -46,6 +46,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
       total: Math.max(0, subtotal - discount),
       updatedAt: new Date().toISOString(),
     })
+    if (error) onNotify(error)
   }
 
   const changeQuantity = (itemId: string, change: number) => {
@@ -53,7 +54,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
     const lines = selectedOrder.lines
       .map((line) => line.itemId === itemId ? { ...line, quantity: line.quantity + change } : line)
       .filter((line) => line.quantity > 0)
-    updateOrder({ lines })
+    void updateOrder({ lines })
   }
 
   const printKot = () => {
@@ -67,14 +68,26 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
       lines: selectedOrder.lines,
     })
     if (!printed) return onNotify('The print window was blocked by the browser.')
-    updateOrder({ status: 'KOT sent' })
     onNotify(`KOT for order #${String(selectedOrder.orderNumber).padStart(4, '0')} opened for printing.`)
   }
 
-  const printBill = () => {
+  const printBill = async () => {
     if (!canPrintBill) return onNotify('You do not have permission to print a bill.')
     if (!selectedOrder?.lines.length) return onNotify('This order has no food items.')
-    const printed = printBillReceipt({
+    const printWindow = preparePrintWindow()
+    if (!printWindow) return onNotify('The print window was blocked by the browser.')
+    const itemSummary = selectedOrder.lines.map((line) => `${line.name} x ${line.quantity}`).join(', ')
+    const error = await onCompleteOrder(selectedOrder.id, {
+      amount: selectedOrder.total,
+      paymentMethod: selectedOrder.paymentMethod,
+      note: `Order #${String(selectedOrder.orderNumber).padStart(4, '0')}. ${selectedOrder.tableNumber}. ${itemSummary}. Subtotal ${formatCurrency(selectedOrder.subtotal, currency)}. Discount ${formatCurrency(selectedOrder.discount, currency)}.`,
+      occurredAt: new Date().toISOString(),
+    })
+    if (error) {
+      printWindow.close()
+      return onNotify(error)
+    }
+    printBillReceipt({
       restaurantName,
       branchName,
       orderNumber: selectedOrder.orderNumber,
@@ -85,16 +98,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
       subtotal: selectedOrder.subtotal,
       discount: selectedOrder.discount,
       total: selectedOrder.total,
-    })
-    if (!printed) return onNotify('The print window was blocked by the browser.')
-
-    const itemSummary = selectedOrder.lines.map((line) => `${line.name} x ${line.quantity}`).join(', ')
-    onCompleteOrder(selectedOrder.id, {
-      amount: selectedOrder.total,
-      paymentMethod: selectedOrder.paymentMethod,
-      note: `Order #${String(selectedOrder.orderNumber).padStart(4, '0')}. ${selectedOrder.tableNumber}. ${itemSummary}. Subtotal ${formatCurrency(selectedOrder.subtotal, currency)}. Discount ${formatCurrency(selectedOrder.discount, currency)}.`,
-      occurredAt: new Date().toISOString(),
-    })
+    }, printWindow)
   }
 
   return (
@@ -118,7 +122,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
         {selectedOrder && <aside className="sales-summary-card orders-summary-card">
           <div className="sales-summary-header"><div><span className="eyebrow">Order #{String(selectedOrder.orderNumber).padStart(4, '0')}</span><h2>Bill summary</h2></div><span className="order-status-pill"><ClipboardCheck size={14} /> {selectedOrder.status}</span></div>
 
-          <label className="field sales-table-selector"><span>Table</span><select value={selectedOrder.tableNumber} onChange={(event) => updateOrder({ tableNumber: event.target.value })} disabled={!canEdit}>{tableOptions.map((table) => <option value={table} key={table}>{table}</option>)}</select></label>
+          <label className="field sales-table-selector"><span>Table</span><select value={selectedOrder.tableNumber} onChange={(event) => void updateOrder({ tableNumber: event.target.value })} disabled={!canEdit}>{tableOptions.map((table) => <option value={table} key={table}>{table}</option>)}</select></label>
 
           <div className="sales-cart-lines">
             {selectedOrder.lines.map((line, index) => <div className="sales-cart-line" key={line.itemId}>
@@ -130,8 +134,8 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
           </div>
 
           <div className="sales-bill-fields">
-            <label className="field"><span>Discount amount</span><input type="number" min="0" max={selectedOrder.subtotal} step="1" value={selectedOrder.discount || ''} onChange={(event) => updateOrder({ discount: Number(event.target.value) || 0 })} disabled={!canEdit} placeholder="0" /></label>
-            <label className="field"><span>Payment method</span><select value={selectedOrder.paymentMethod} onChange={(event) => updateOrder({ paymentMethod: event.target.value as PaymentMethod })} disabled={!canEdit}><option>Cash</option><option>Card</option><option>Mobile Banking</option><option>Other</option></select></label>
+            <label className="field"><span>Discount amount</span><input type="number" min="0" max={selectedOrder.subtotal} step="1" value={selectedOrder.discount || ''} onChange={(event) => void updateOrder({ discount: Number(event.target.value) || 0 })} disabled={!canEdit} placeholder="0" /></label>
+            <label className="field"><span>Payment method</span><select value={selectedOrder.paymentMethod} onChange={(event) => void updateOrder({ paymentMethod: event.target.value as PaymentMethod })} disabled={!canEdit}><option>Cash</option><option>Card</option><option>Mobile Banking</option><option>Other</option></select></label>
           </div>
 
           <div className="sales-total-box">
@@ -142,7 +146,7 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
 
           <div className="sales-print-actions">
             <button className="button secondary" type="button" onClick={printKot} disabled={!selectedOrder.lines.length || !canPrintKot}><Printer size={18} /> Print KOT</button>
-            <button className="button primary" type="button" onClick={printBill} disabled={!selectedOrder.lines.length || !canPrintBill}><ReceiptText size={18} /> Print bill</button>
+            <button className="button primary" type="button" onClick={() => void printBill()} disabled={!selectedOrder.lines.length || !canPrintBill}><ReceiptText size={18} /> Print bill</button>
           </div>
         </aside>}
       </section>}

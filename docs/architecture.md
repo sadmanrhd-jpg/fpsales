@@ -2,20 +2,44 @@
 
 ## Frontend
 
-React, TypeScript and Vite provide the interface. Pages are permission aware and use shared financial entry components.
+React, TypeScript and Vite provide the interface. The browser uses the Supabase Publishable key only for authentication and session management.
+
+## Secure server layer
+
+`api/app.ts` is a Vercel Function. It receives the signed in user's Supabase access token, verifies the token, loads the application profile, checks role and permissions, and then performs the requested database action.
+
+The Supabase Secret key is used only inside this Vercel Function. It is never included in the browser bundle.
+
+## Data storage
+
+Supabase PostgreSQL stores:
+
+• Profiles and permissions
+
+• Sales and costs
+
+• Financial edit history
+
+• Menu categories and menu items
+
+• Ongoing orders and order items
+
+• Restaurant and branch settings
+
+Deletion PIN credentials are salted and hashed by the server and stored as private branch settings. Plain PIN values are not stored.
+
+Optional financial attachments are stored in a private Supabase Storage bucket named `financial-entry-attachments`. The server creates the bucket when the first attachment is uploaded.
 
 ## Authentication
 
-The current prototype uses PBKDF2 password hashing in the browser and stores only the password salt and derived hash. The initial state contains one superadmin. The superadmin creates all other accounts, grants grouped granular permissions individually, and controls every password change. Login sessions use session storage by default and local storage only when Remember me is selected.
+Login uses Supabase Auth email and password authentication. The superadmin creates other Auth users from the Users page through the secure Vercel Function.
 
-## Local persistence
+The application does not provide password change controls to non-superadmin users. The superadmin can replace any user's password from the Users page.
 
-`src/lib/storage.ts` is the local data adapter. It stores application data in browser local storage. Temporary login sessions use browser session storage, while remembered sessions use browser local storage. The previous sample data key is not loaded.
+## Session persistence
 
-## Production adapter
+The Supabase session is stored in session storage by default. Selecting Remember me stores it in local storage on that device.
 
-For a shared production system, replace the local adapter with Supabase Auth and PostgreSQL. The supplied migration uses per profile permissions and reserves the superadmin role for complete access.
+## Permission enforcement
 
-## Module boundaries
-
-The active modules are dashboard, sales, costs, menu, audit history, reports, users, and settings. Future database tables cover branches, orders, kitchen tokens, tables, inventory, customers, employees, payments, and discounts.
+The interface hides unavailable actions, but the Vercel Function independently checks permissions before every protected database operation. Superadmin access cannot be reduced from the application.

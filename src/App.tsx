@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ShieldCheck, Trash2 } from 'lucide-react'
 import { AppShell } from './components/AppShell'
@@ -6,11 +6,11 @@ import { EntryDetails } from './components/EntryDetails'
 import { EntryForm } from './components/EntryForm'
 import { Modal } from './components/Modal'
 import { Toast } from './components/Toast'
-import { allPermissions, emptyPermissions } from './data/defaults'
-import { createDeletionPinCredential, createPasswordCredential, verifyDeletionPin, verifyPassword } from './lib/auth'
+import { allPermissions, defaultState, emptyPermissions } from './data/defaults'
+import { loadAppData, runAppAction } from './lib/api'
 import { downloadFinancialReport } from './lib/pdf'
-import { clearSession, loadSessionUserId, loadState, saveSessionUserId, saveState } from './lib/storage'
-import { isWithinLast24Hours, randomId } from './lib/utils'
+import { setRememberSession, supabase } from './lib/supabase'
+import { isWithinLast24Hours } from './lib/utils'
 import { DashboardPage } from './pages/DashboardPage'
 import { EntriesPage } from './pages/EntriesPage'
 import { HistoryPage } from './pages/HistoryPage'
@@ -21,11 +21,16 @@ import { ReportsPage } from './pages/ReportsPage'
 import { SalesOrderPage } from './pages/SalesOrderPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { UsersPage } from './pages/UsersPage'
-import type { AppSettings, AppState, AuditRecord, CostEntry, FinancialEntry, OngoingOrder, PageKey, PeriodFilter, SalesEntry } from './types'
+import type { AppSettings, AppState, CostEntry, FinancialEntry, MenuItem, OngoingOrder, PageKey, PeriodFilter, Role, SalesEntry, UserPermissions } from './types'
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'The request could not be completed.'
+}
 
 function App() {
-  const [state, setState] = useState<AppState>(() => loadState())
-  const [currentUserId, setCurrentUserId] = useState<string | null>(() => loadSessionUserId())
+  const [state, setState] = useState<AppState>(() => structuredClone(defaultState))
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const [page, setPage] = useState<PageKey>('dashboard')
   const [period, setPeriod] = useState<PeriodFilter>('daily')
   const [modal, setModal] = useState<{ mode: 'add' | 'edit' | 'view'; kind?: 'sale' | 'cost'; entry?: FinancialEntry } | null>(null)
@@ -35,7 +40,43 @@ function App() {
   const [costDeletionError, setCostDeletionError] = useState('')
   const [checkingCostDeletionPin, setCheckingCostDeletionPin] = useState(false)
 
-  useEffect(() => saveState(state), [state])
+  const refreshData = useCallback(async (showLoader = false) => {
+    if (showLoader) setLoading(true)
+    try {
+      const result = await loadAppData()
+      setState(result.state)
+      setCurrentUserId(result.currentUserId)
+    } finally {
+      if (showLoader) setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    const initialise = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        try {
+          await refreshData(false)
+        } catch {
+          await supabase.auth.signOut()
+        }
+      }
+      if (mounted) setLoading(false)
+    }
+    void initialise()
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setState(structuredClone(defaultState))
+        setCurrentUserId(null)
+      }
+    })
+    return () => {
+      mounted = false
+      listener.subscription.unsubscribe()
+    }
+  }, [refreshData])
+
   useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(''), 3200)
@@ -46,42 +87,14 @@ function App() {
   const permissions = currentUser?.role === 'superadmin' ? allPermissions() : currentUser?.permissions ?? emptyPermissions()
   const isSuperadmin = currentUser?.role === 'superadmin'
 
-  useEffect(() => {
-    if (currentUserId && !currentUser) {
-      clearSession()
-      setCurrentUserId(null)
-    }
-  }, [currentUserId, currentUser])
-
   const visiblePages = useMemo(() => {
     if (!currentUser) return [] as PageKey[]
     const pages: PageKey[] = []
     if (permissions['dashboard.today'] || permissions['dashboard.history'] || permissions['dashboard.export']) pages.push('dashboard')
-    if (
-      permissions['sales.view24h']
-      || permissions['sales.viewAll']
-      || permissions['sales.create']
-      || permissions['sales.edit']
-      || permissions['sales.printKot']
-      || permissions['sales.printBill']
-    ) pages.push('sales')
+    if (permissions['sales.view24h'] || permissions['sales.viewAll'] || permissions['sales.create'] || permissions['sales.edit'] || permissions['sales.printKot'] || permissions['sales.printBill']) pages.push('sales')
     if (permissions['orders.view']) pages.push('orders')
-    if (
-      permissions['costs.view24h']
-      || permissions['costs.viewAll']
-      || permissions['costs.create']
-      || permissions['costs.edit']
-      || permissions['costs.remove']
-    ) pages.push('costs')
-    if (
-      permissions['menu.view']
-      || permissions['menu.categories.create']
-      || permissions['menu.categories.remove']
-      || permissions['menu.items.create']
-      || permissions['menu.items.edit']
-      || permissions['menu.items.availability']
-      || permissions['menu.items.remove']
-    ) pages.push('menu')
+    if (permissions['costs.view24h'] || permissions['costs.viewAll'] || permissions['costs.create'] || permissions['costs.edit'] || permissions['costs.remove']) pages.push('costs')
+    if (permissions['menu.view'] || permissions['menu.categories.create'] || permissions['menu.categories.remove'] || permissions['menu.items.create'] || permissions['menu.items.edit'] || permissions['menu.items.availability'] || permissions['menu.items.remove']) pages.push('menu')
     if (permissions['audit.view']) pages.push('history')
     if (permissions['reports.view']) pages.push('reports')
     if (isSuperadmin) pages.push('users')
@@ -111,19 +124,21 @@ function App() {
   }, [state.costs, permissions])
 
   const login = async (email: string, password: string, rememberMe: boolean): Promise<string | null> => {
-    const user = state.users.find((item) => item.email.toLowerCase() === email.trim().toLowerCase())
-    if (!user || !user.active) return 'Invalid email or password.'
-    const valid = await verifyPassword(user, password)
-    if (!valid) return 'Invalid email or password.'
-    saveSessionUserId(user.id, rememberMe)
-    setCurrentUserId(user.id)
-    setPage('dashboard')
-    return null
+    try {
+      setRememberSession(rememberMe)
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
+      if (error) return 'Invalid email or password.'
+      await refreshData(true)
+      setPage('dashboard')
+      return null
+    } catch (error) {
+      await supabase.auth.signOut()
+      return errorMessage(error)
+    }
   }
 
-  const logout = () => {
-    clearSession()
-    setCurrentUserId(null)
+  const logout = async () => {
+    await supabase.auth.signOut()
     setModal(null)
     setPendingCostDelete(null)
     setCostDeletionPin('')
@@ -132,6 +147,7 @@ function App() {
     setPeriod('daily')
   }
 
+  if (loading) return <main className="login-page"><section className="login-card"><div className="login-brand"><img src="/food-pavilion-logo.png" alt="Food Pavilion" /><span>Connecting securely to Supabase</span></div><div className="login-copy"><h1>Loading your restaurant data</h1><p>Please keep this page open.</p></div></section></main>
   if (!currentUser) return <LoginPage onLogin={login} />
 
   const canEdit = (entry: FinancialEntry) => {
@@ -156,7 +172,7 @@ function App() {
 
   const requestDeleteCost = (entry: FinancialEntry) => {
     if (!permissions['costs.remove'] || entry.kind !== 'cost') return
-    if (!currentUser.deletionPinHash || !currentUser.deletionPinSalt) {
+    if (!currentUser.hasDeletionPin) {
       setToast('Create your 4 digit deletion PIN in Settings before deleting cost entries.')
       return
     }
@@ -180,56 +196,41 @@ function App() {
       return
     }
     setCheckingCostDeletionPin(true)
-    const valid = await verifyDeletionPin(currentUser, costDeletionPin)
-    setCheckingCostDeletionPin(false)
-    if (!valid) {
-      setCostDeletionError('The deletion PIN is incorrect.')
-      return
+    try {
+      await runAppAction('delete_cost', { id: pendingCostDelete.id, pin: costDeletionPin })
+      await refreshData()
+      closeCostDeleteModal()
+      setToast('Cost entry deleted.')
+    } catch (error) {
+      setCostDeletionError(errorMessage(error))
+    } finally {
+      setCheckingCostDeletionPin(false)
     }
-    setState((current) => ({
-      ...current,
-      costs: current.costs.filter((entry) => entry.id !== pendingCostDelete.id),
-    }))
-    closeCostDeleteModal()
-    setToast('Cost entry deleted.')
   }
 
-  const createEntry = (payload: Omit<SalesEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'> | Omit<CostEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>) => {
-    const now = new Date().toISOString()
-    if (modal?.kind === 'sale' && permissions['sales.create']) {
-      const entry: SalesEntry = { ...(payload as Omit<SalesEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>), id: randomId('sale'), kind: 'sale', createdAt: now, createdBy: currentUser.id, editCount: 0 }
-      setState((current) => ({ ...current, sales: [entry, ...current.sales] }))
-    } else if (modal?.kind === 'cost' && permissions['costs.create']) {
-      const entry: CostEntry = { ...(payload as Omit<CostEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>), id: randomId('cost'), kind: 'cost', createdAt: now, createdBy: currentUser.id, editCount: 0 }
-      setState((current) => ({ ...current, costs: [entry, ...current.costs] }))
-    } else return
-    setModal(null)
-    setToast(`${modal?.kind === 'sale' ? 'Sale' : 'Cost'} entry added.`)
+  const createEntry = async (payload: Omit<SalesEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'> | Omit<CostEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>) => {
+    if (!modal?.kind) return
+    try {
+      await runAppAction('create_entry', { ...payload, kind: modal.kind })
+      await refreshData()
+      setModal(null)
+      setToast(`${modal.kind === 'sale' ? 'Sale' : 'Cost'} entry added.`)
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
   }
 
-  const editEntry = (payload: Omit<SalesEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'> | Omit<CostEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>, reason?: string) => {
+  const editEntry = async (payload: Omit<SalesEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'> | Omit<CostEntry, 'id' | 'kind' | 'createdAt' | 'createdBy' | 'editCount'>, reason?: string) => {
     const original = modal?.entry
     if (!original || !reason || !canEdit(original)) return
-    const updated = { ...original, ...payload, editCount: original.editCount + 1 } as FinancialEntry
-    const audit: AuditRecord = {
-      id: randomId('audit'),
-      entryId: original.id,
-      entryKind: original.kind,
-      originalData: structuredClone(original),
-      updatedData: structuredClone(updated),
-      reason,
-      editedBy: currentUser.id,
-      editedAt: new Date().toISOString(),
-      editNumber: updated.editCount,
+    try {
+      await runAppAction('update_entry', { id: original.id, ...payload, reason })
+      await refreshData()
+      setModal(null)
+      setToast('Entry updated and added to the audit history.')
+    } catch (error) {
+      setToast(errorMessage(error))
     }
-    setState((current) => ({
-      ...current,
-      sales: original.kind === 'sale' ? current.sales.map((entry) => entry.id === original.id ? updated as SalesEntry : entry) : current.sales,
-      costs: original.kind === 'cost' ? current.costs.map((entry) => entry.id === original.id ? updated as CostEntry : entry) : current.costs,
-      auditRecords: [audit, ...current.auditRecords],
-    }))
-    setModal(null)
-    setToast('Entry updated and added to the audit history.')
   }
 
   const exportCurrentPeriod = () => {
@@ -259,98 +260,134 @@ function App() {
     })
   }
 
-  const saveSettings = (settings: AppSettings) => {
-    if (!permissions['settings.manage']) return
-    setState((current) => ({ ...current, settings }))
-    setToast('Settings saved.')
-  }
-  const updateUsers = (users: AppState['users']) => setState((current) => ({ ...current, users }))
-  const updateMenuCategories = (menuCategories: AppState['menuCategories']) => setState((current) => ({ ...current, menuCategories }))
-  const updateMenuItems = (menuItems: AppState['menuItems']) => setState((current) => ({ ...current, menuItems }))
-
-  const createOngoingOrder = (draft: Omit<OngoingOrder, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'status'>) => {
-    if (!permissions['sales.create'] || !permissions['sales.printKot']) return
-    const now = new Date().toISOString()
-    const order: OngoingOrder = {
-      ...draft,
-      id: randomId('order'),
-      status: 'KOT sent',
-      createdAt: now,
-      updatedAt: now,
-      createdBy: currentUser.id,
+  const saveSettings = async (settings: AppSettings): Promise<string | null> => {
+    try {
+      await runAppAction('save_settings', { settings })
+      await refreshData()
+      setToast('Settings saved.')
+      return null
+    } catch (error) {
+      return errorMessage(error)
     }
-    setState((current) => ({
-      ...current,
-      orders: [order, ...current.orders],
-      nextOrderNumber: Math.max(current.nextOrderNumber, draft.orderNumber + 1),
-    }))
   }
 
-  const updateOngoingOrder = (order: OngoingOrder) => {
-    if (!permissions['orders.edit']) return
-    setState((current) => ({ ...current, orders: current.orders.map((currentOrder) => currentOrder.id === order.id ? order : currentOrder) }))
+  const createOngoingOrder = async (draft: Omit<OngoingOrder, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'status'>) => {
+    try {
+      const order = await runAppAction<OngoingOrder>('create_order', draft)
+      await refreshData()
+      return { order }
+    } catch (error) {
+      return { error: errorMessage(error) }
+    }
   }
 
-  const completeOrderSale = (sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => {
-    if (!permissions['sales.create'] || !permissions['sales.printBill']) return
-    const now = new Date().toISOString()
-    const entry: SalesEntry = { ...sale, id: randomId('sale'), kind: 'sale', createdAt: now, createdBy: currentUser.id, editCount: 0 }
-    setState((current) => ({ ...current, sales: [entry, ...current.sales] }))
-    setToast('Bill printed and sale recorded.')
+  const updateOngoingOrder = async (order: OngoingOrder): Promise<string | null> => {
+    try {
+      await runAppAction('update_order', order)
+      await refreshData()
+      return null
+    } catch (error) {
+      return errorMessage(error)
+    }
   }
 
-  const completeOngoingOrder = (orderId: string, sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => {
-    if (!permissions['sales.printBill']) return
-    const now = new Date().toISOString()
-    const entry: SalesEntry = { ...sale, id: randomId('sale'), kind: 'sale', createdAt: now, createdBy: currentUser.id, editCount: 0 }
-    setState((current) => ({
-      ...current,
-      sales: [entry, ...current.sales],
-      orders: current.orders.filter((order) => order.id !== orderId),
-    }))
-    setToast('Bill printed, sale recorded, and order removed from ongoing orders.')
+  const completeOrderSale = async (sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>): Promise<string | null> => {
+    try {
+      await runAppAction('complete_sale', sale)
+      await refreshData()
+      setToast('Bill printed and sale recorded.')
+      return null
+    } catch (error) {
+      return errorMessage(error)
+    }
+  }
+
+  const completeOngoingOrder = async (orderId: string, sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>): Promise<string | null> => {
+    try {
+      await runAppAction('complete_order', { orderId, sale })
+      await refreshData()
+      setToast('Bill printed, sale recorded, and order completed.')
+      return null
+    } catch (error) {
+      return errorMessage(error)
+    }
   }
 
   const changeOwnPassword = async (currentPassword: string, newPassword: string): Promise<string | null> => {
     if (!isSuperadmin) return 'Only the superadmin can change passwords.'
-    const valid = await verifyPassword(currentUser, currentPassword)
-    if (!valid) return 'The current password is incorrect.'
-    const credential = await createPasswordCredential(newPassword)
-    setState((current) => ({ ...current, users: current.users.map((user) => user.id === currentUser.id ? { ...user, ...credential } : user) }))
-    return null
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email: currentUser.email, password: currentPassword })
+    if (signInError) return 'The current password is incorrect.'
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    return error ? error.message : null
   }
 
   const saveOwnDeletionPin = async (currentPin: string, newPin: string): Promise<string | null> => {
-    if (!/^\d{4}$/.test(newPin)) return 'The deletion PIN must contain exactly 4 digits.'
-    if (currentUser.deletionPinHash) {
-      const valid = await verifyDeletionPin(currentUser, currentPin)
-      if (!valid) return 'The current deletion PIN is incorrect.'
+    try {
+      await runAppAction('save_deletion_pin', { currentPin, newPin })
+      await refreshData()
+      return null
+    } catch (error) {
+      return errorMessage(error)
     }
-    const credential = await createDeletionPinCredential(newPin)
-    setState((current) => ({ ...current, users: current.users.map((user) => user.id === currentUser.id ? { ...user, ...credential } : user) }))
-    return null
   }
 
-  const verifyOwnDeletionPin = async (pin: string): Promise<boolean> => verifyDeletionPin(currentUser, pin)
+  const createUser = async (input: { name: string; email: string; role: Role; password: string; permissions: UserPermissions }): Promise<string | null> => {
+    try {
+      await runAppAction('create_user', input)
+      await refreshData()
+      return null
+    } catch (error) {
+      return errorMessage(error)
+    }
+  }
+
+  const updateUser = async (id: string, changes: { role?: Role; active?: boolean; permissions?: UserPermissions }): Promise<string | null> => {
+    try {
+      await runAppAction('update_user', { id, ...changes })
+      await refreshData()
+      return null
+    } catch (error) {
+      return errorMessage(error)
+    }
+  }
+
+  const resetUserPassword = async (id: string, password: string): Promise<string | null> => {
+    try {
+      await runAppAction('reset_user_password', { id, password })
+      return null
+    } catch (error) {
+      return errorMessage(error)
+    }
+  }
+
+  const menuAction = async (action: string, payload: unknown): Promise<string | null> => {
+    try {
+      await runAppAction(action, payload)
+      await refreshData()
+      return null
+    } catch (error) {
+      return errorMessage(error)
+    }
+  }
 
   const noAccess = !visiblePages.length
   const effectivePage = visiblePages.includes(page) ? page : visiblePages[0] ?? 'settings'
   const pageContent = (() => {
     if (noAccess) return <section className="content-card no-access-card"><h1>No permissions assigned</h1><p>Ask the superadmin to grant access to the required modules.</p></section>
     if (effectivePage === 'sales') return <SalesOrderPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} recentSales={visibleSales} nextOrderNumber={state.nextOrderNumber} canCreateOrder={permissions['sales.create']} canPrintKot={permissions['sales.printKot']} canPrintBill={permissions['sales.printBill']} onCreateOrder={createOngoingOrder} onCompleteSale={completeOrderSale} onNotify={setToast} />
-    if (effectivePage === 'orders') return <OrdersPage orders={state.orders} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} canEdit={permissions['orders.edit']} canPrintKot={permissions['sales.printKot']} canPrintBill={permissions['sales.printBill']} onUpdateOrder={updateOngoingOrder} onCompleteOrder={completeOngoingOrder} onNotify={setToast} />
+    if (effectivePage === 'orders') return <OrdersPage orders={state.orders} currency={state.settings.currencyCode} restaurantName={state.settings.restaurantName} branchName={state.settings.branchName} canEdit={permissions['orders.edit']} canPrintKot={permissions['sales.printKot']} canPrintBill={permissions['sales.printBill'] && permissions['sales.create']} onUpdateOrder={updateOngoingOrder} onCompleteOrder={completeOngoingOrder} onNotify={setToast} />
     if (effectivePage === 'costs') return <EntriesPage kind="cost" entries={visibleCosts} users={state.users} currency={state.settings.currencyCode} limitedTo24Hours={permissions['costs.view24h'] && !permissions['costs.viewAll']} canCreate={permissions['costs.create']} canEdit={canEdit} canDelete={(entry) => permissions['costs.remove'] && entry.kind === 'cost'} onCreate={() => openAdd('cost')} onEdit={openEdit} onView={openView} onDelete={requestDeleteCost} />
-    if (effectivePage === 'menu') return <MenuPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} canCreateCategory={permissions['menu.categories.create']} canDeleteCategory={permissions['menu.categories.remove']} canCreateItem={permissions['menu.items.create']} canEditItem={permissions['menu.items.edit']} canChangeAvailability={permissions['menu.items.availability']} canDeleteItem={permissions['menu.items.remove']} currentUserId={currentUser.id} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onVerifyDeletionPin={verifyOwnDeletionPin} onCategoriesChange={updateMenuCategories} onItemsChange={updateMenuItems} onNotify={setToast} />
+    if (effectivePage === 'menu') return <MenuPage categories={state.menuCategories} items={state.menuItems} currency={state.settings.currencyCode} canCreateCategory={permissions['menu.categories.create']} canDeleteCategory={permissions['menu.categories.remove']} canCreateItem={permissions['menu.items.create']} canEditItem={permissions['menu.items.edit']} canChangeAvailability={permissions['menu.items.availability']} canDeleteItem={permissions['menu.items.remove']} hasDeletionPin={currentUser.hasDeletionPin} onCreateCategory={(name) => menuAction('create_menu_category', { name })} onDeleteCategory={(id, pin) => menuAction('delete_menu_category', { id, pin })} onSaveItem={(id, data) => menuAction(id ? 'update_menu_item' : 'create_menu_item', { id, ...data })} onToggleAvailability={(item: MenuItem) => menuAction('toggle_menu_item', { id: item.id, available: !item.available })} onDeleteItem={(id, pin) => menuAction('delete_menu_item', { id, pin })} onNotify={setToast} />
     if (effectivePage === 'history') return <HistoryPage records={state.auditRecords} users={state.users} currency={state.settings.currencyCode} />
     if (effectivePage === 'reports') return <ReportsPage sales={state.sales} costs={state.costs} settings={state.settings} canExport={permissions['reports.export']} />
-    if (effectivePage === 'users' && isSuperadmin) return <UsersPage users={state.users} currentUserId={currentUser.id} onUsersChange={updateUsers} onNotify={setToast} />
-    if (effectivePage === 'settings') return <SettingsPage settings={state.settings} canManageSettings={permissions['settings.manage']} isSuperadmin={isSuperadmin} hasDeletionPin={Boolean(currentUser.deletionPinHash && currentUser.deletionPinSalt)} onSave={saveSettings} onChangeOwnPassword={changeOwnPassword} onSaveDeletionPin={saveOwnDeletionPin} />
+    if (effectivePage === 'users' && isSuperadmin) return <UsersPage users={state.users} currentUserId={currentUser.id} onCreateUser={createUser} onUpdateUser={updateUser} onResetPassword={resetUserPassword} onNotify={setToast} />
+    if (effectivePage === 'settings') return <SettingsPage settings={state.settings} canManageSettings={permissions['settings.manage']} isSuperadmin={isSuperadmin} hasDeletionPin={currentUser.hasDeletionPin} onSave={saveSettings} onChangeOwnPassword={changeOwnPassword} onSaveDeletionPin={saveOwnDeletionPin} />
     return <DashboardPage period={period} onPeriodChange={setPeriod} sales={visibleSales} costs={visibleCosts} users={state.users} currency={state.settings.currencyCode} receptionMode={!permissions['dashboard.history']} canExport={permissions['dashboard.export']} canAddSale={permissions['sales.create']} canAddCost={permissions['costs.create']} canEdit={canEdit} canDelete={(entry) => permissions['costs.remove'] && entry.kind === 'cost'} onAddSale={() => setPage('sales')} onAddCost={() => setPage('costs')} onEdit={openEdit} onView={openView} onDelete={requestDeleteCost} onExport={exportCurrentPeriod} />
   })()
 
   return (
     <>
-      <AppShell activePage={effectivePage} onPageChange={setPage} currentUser={currentUser} onLogout={logout} visiblePages={visiblePages}>{pageContent}</AppShell>
+      <AppShell activePage={effectivePage} onPageChange={setPage} currentUser={currentUser} onLogout={() => void logout()} visiblePages={visiblePages}>{pageContent}</AppShell>
       {modal?.mode === 'add' && modal.kind && <Modal title={`Add ${modal.kind}`} onClose={() => setModal(null)}><EntryForm kind={modal.kind} onSubmit={createEntry} onCancel={() => setModal(null)} /></Modal>}
       {modal?.mode === 'edit' && modal.kind && modal.entry && <Modal title={`Edit ${modal.kind}`} onClose={() => setModal(null)}><EntryForm kind={modal.kind} entry={modal.entry} requireReason onSubmit={editEntry} onCancel={() => setModal(null)} /></Modal>}
       {modal?.mode === 'view' && modal.entry && <Modal title="Entry details" onClose={() => setModal(null)}><EntryDetails entry={modal.entry} users={state.users} currency={state.settings.currencyCode} /></Modal>}

@@ -1,111 +1,104 @@
 # Food Pavilion Sales, Cost and Menu Manager
 
-A responsive restaurant management starter application built with React, TypeScript and Vite. The repository is configured for deployment on Vercel.
+A responsive restaurant management application built with React, TypeScript, Vite, Supabase and Vercel Functions.
 
-## Current features
+## What is connected
 
-• Email and password sign in
+The application now uses:
 
-• One initial superadmin account only
+• Supabase Auth for email and password login
 
-• Superadmin account creation for other users
+• Supabase PostgreSQL for users, permissions, sales, costs, edit history, menu, orders and settings
 
-• Manual permission assignment for every user
+• Supabase Storage for optional cost attachments
 
-• Superadmin password change
+• A secure Vercel Function for database actions that require the private Supabase Secret key
 
-• Password replacement for any user by the superadmin
+• Browser storage only for the Remember me choice and Supabase session
 
-• Other users cannot change their own password
+There is no sample sales, cost, category, menu item or local fallback superadmin data in the repository.
 
-• Dashboard with daily, weekly and monthly summaries
+## Required Vercel setting
 
-• Sales and cost entries
+The Project URL and Publishable key supplied for this project are already configured as safe frontend fallbacks.
 
-• Reception access limited to the last 24 hours when granted
+You only need to add one private environment variable in Vercel:
 
-• Reception editing limited to two edits with a mandatory reason
+```text
+SUPABASE_SECRET_KEY=your Supabase Secret key
+```
 
-• Complete financial edit history
+Do not prefix the private key with `VITE_`. Do not place it in GitHub.
 
-• PDF and CSV financial report export
+The server also accepts `SUPABASE_SERVICE_ROLE_KEY` when your Supabase project still uses a legacy service role key.
 
-• Menu category and menu item creation
+## Deploy to Vercel
 
-• Menu item editing and availability control
+1. Upload this folder to your GitHub repository.
+2. Open Vercel and import the repository.
+3. Open Project Settings, then Environment Variables.
+4. Add `SUPABASE_SECRET_KEY` with your Supabase Secret key.
+5. Enable it for Production, Preview and Development.
+6. Deploy or redeploy the project.
 
-• Responsive desktop, tablet and mobile layouts
+Vercel should detect Vite automatically. The expected build command is `npm run build` and the output folder is `dist`.
 
-• Food Pavilion logo and branding
+## First live test
 
-## Initial state
+1. Sign in with the superadmin Supabase account.
+2. Open Users and create one temporary Reception user.
+3. Assign only the required Reception permissions.
+4. Open Menu and add one temporary category and item.
+5. Sign in from another browser or device and confirm that the same menu appears.
+6. Add a temporary sale and cost.
+7. Confirm that both appear for the superadmin on another device.
+8. Delete the temporary records before entering real restaurant data.
 
-The application starts with:
+## Local development
 
-• One superadmin account using the credentials supplied for this build
+Create `.env.local` in the project root:
 
-• Zero sales entries
+```text
+VITE_SUPABASE_URL=https://ubiwpygjplsvcjsfzoxu.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_v0mtlfR8teOu-tDfkwMERQ_eagIJhYk
+SUPABASE_SECRET_KEY=your Supabase Secret key
+```
 
-• Zero cost entries
-
-• Zero audit records
-
-• Zero menu categories
-
-• Zero menu items
-
-Change the superadmin password from Settings after the first sign in.
-
-## Run locally
+Then run:
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Production build
+The private key is needed by the local Vercel Function. For full local function testing, use Vercel CLI with `vercel dev`. Normal `npm run dev` runs only the Vite frontend.
 
-```bash
-npm run build
-npm run preview
+## Database expectations
+
+The connected Supabase project must already contain the schema in:
+
+```text
+supabase/migrations/202607260001_initial_schema.sql
 ```
 
-## Deploy to Vercel
+For the server only security model, run this additional idempotent migration once in the Supabase SQL Editor:
 
-1. Upload this folder to a GitHub repository.
-2. Import the repository into Vercel.
-3. Use `npm run build` as the build command.
-4. Use `dist` as the output directory.
-5. Deploy.
+```text
+supabase/migrations/202607260002_server_only_security.sql
+```
 
-## Data and authentication scope
+This enables Row Level Security on every application table. No browser table policies are required because database operations pass through the secure Vercel Function.
 
-The current deployable build stores users, password hashes, permissions, menu data, sales, costs, and sessions in browser storage. This makes the application immediately usable as a single browser prototype.
+It must also contain:
 
-Browser storage is not a central database. Accounts and records created in one browser are not automatically shared with another device. For a live multi device restaurant deployment, connect the included Supabase schema and replace the local storage adapter with Supabase Auth, PostgreSQL, and Storage.
+• An organisation
 
-## Database readiness
+• A branch
 
-The migration in `supabase/migrations/202607260001_initial_schema.sql` includes:
+• A superadmin Auth user
 
-• Organisations and multiple branches
+• A matching row in `profiles`
 
-• Authenticated profiles and superadmin role support
+• The superadmin profile linked to the organisation and default branch
 
-• Per user permissions
-
-• Financial entries and immutable audit history
-
-• Attachments
-
-• Menu categories and menu items
-
-• Restaurant tables
-
-• Customers and employees
-
-• Orders, order items and kitchen order tokens
-
-• Inventory and stock movements
-
-• Payments and discounts
+The Vercel Function automatically maintains the permission catalogue when the superadmin creates or updates users.

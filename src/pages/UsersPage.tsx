@@ -1,9 +1,7 @@
 import { Eye, EyeOff, KeyRound, LockKeyhole, Plus, Save, ShieldCheck, UserRoundCheck } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { emptyPermissions, permissionGroups, permissionLabels } from '../data/defaults'
-import { createPasswordCredential } from '../lib/auth'
-import { randomId } from '../lib/utils'
 import type { AppUser, PermissionKey, Role, UserPermissions } from '../types'
 
 const assignableRoles: Role[] = ['reception', 'manager', 'admin']
@@ -12,10 +10,11 @@ const roleName = (role: Role) => role === 'superadmin' ? 'Superadmin' : role[0].
 interface UsersPageProps {
   users: AppUser[]
   currentUserId: string
-  onUsersChange: (users: AppUser[]) => void
+  onCreateUser: (input: { name: string; email: string; role: Role; password: string; permissions: UserPermissions }) => Promise<string | null>
+  onUpdateUser: (id: string, changes: { role?: Role; active?: boolean; permissions?: UserPermissions }) => Promise<string | null>
+  onResetPassword: (id: string, password: string) => Promise<string | null>
   onNotify: (message: string) => void
 }
-
 
 interface PermissionSelectorProps {
   permissions: UserPermissions
@@ -69,7 +68,7 @@ function PasswordFields({ password, confirmPassword, onPasswordChange, onConfirm
   )
 }
 
-export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: UsersPageProps) {
+export function UsersPage({ users, currentUserId, onCreateUser, onUpdateUser, onResetPassword, onNotify }: UsersPageProps) {
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -78,6 +77,8 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
   const [confirmPassword, setConfirmPassword] = useState('')
   const [selectedPermissions, setSelectedPermissions] = useState<UserPermissions>(() => emptyPermissions())
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [editingRole, setEditingRole] = useState<Role>('reception')
+  const [editingPermissions, setEditingPermissions] = useState<UserPermissions>(() => emptyPermissions())
   const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
@@ -86,6 +87,12 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
 
   const editingUser = useMemo(() => users.find((user) => user.id === editingUserId) ?? null, [users, editingUserId])
   const passwordUser = useMemo(() => users.find((user) => user.id === resetPasswordUserId) ?? null, [users, resetPasswordUserId])
+
+  useEffect(() => {
+    if (!editingUser) return
+    setEditingRole(editingUser.role)
+    setEditingPermissions({ ...editingUser.permissions })
+  }, [editingUser])
 
   const resetCreateForm = () => {
     setName('')
@@ -106,35 +113,30 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
     if (password.length < 8) return setError('Password must contain at least 8 characters.')
     if (password !== confirmPassword) return setError('The passwords do not match.')
     setSaving(true)
-    const credential = await createPasswordCredential(password)
-    const user: AppUser = {
-      id: randomId('user'),
-      name: name.trim(),
-      email: cleanEmail,
-      role,
-      active: true,
-      permissions: selectedPermissions,
-      ...credential,
-      createdAt: new Date().toISOString(),
-    }
-    onUsersChange([...users, user])
+    const result = await onCreateUser({ name: name.trim(), email: cleanEmail, role, password, permissions: selectedPermissions })
     setSaving(false)
+    if (result) return setError(result)
     resetCreateForm()
     setShowForm(false)
     onNotify('User account created.')
   }
 
-  const updateUser = (id: string, changes: Partial<AppUser>) => {
-    onUsersChange(users.map((user) => user.id === id ? { ...user, ...changes } : user))
+  const updateActive = async (user: AppUser, active: boolean) => {
+    setError('')
+    const result = await onUpdateUser(user.id, { active })
+    if (result) setError(result)
+    else onNotify(active ? 'User account activated.' : 'User account deactivated.')
   }
 
-  const toggleCreatePermission = (permission: PermissionKey) => {
-    setSelectedPermissions((current) => ({ ...current, [permission]: !current[permission] }))
-  }
-
-  const toggleExistingPermission = (permission: PermissionKey) => {
-    if (!editingUser || editingUser.role === 'superadmin') return
-    updateUser(editingUser.id, { permissions: { ...editingUser.permissions, [permission]: !editingUser.permissions[permission] } })
+  const saveAccess = async () => {
+    if (!editingUser || editingUser.role === 'superadmin') return setEditingUserId(null)
+    setSaving(true)
+    setError('')
+    const result = await onUpdateUser(editingUser.id, { role: editingRole, permissions: editingPermissions })
+    setSaving(false)
+    if (result) return setError(result)
+    setEditingUserId(null)
+    onNotify('User access updated.')
   }
 
   const resetPassword = async (event: React.FormEvent) => {
@@ -144,9 +146,9 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
     if (newPassword.length < 8) return setError('Password must contain at least 8 characters.')
     if (newPassword !== confirmNewPassword) return setError('The passwords do not match.')
     setSaving(true)
-    const credential = await createPasswordCredential(newPassword)
-    updateUser(passwordUser.id, credential)
+    const result = await onResetPassword(passwordUser.id, newPassword)
     setSaving(false)
+    if (result) return setError(result)
     setResetPasswordUserId(null)
     setNewPassword('')
     setConfirmNewPassword('')
@@ -176,7 +178,7 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
             </div>
             <div className="permission-selector">
               <div><strong>Permissions</strong><span>Nothing is granted automatically. Select only what this user needs.</span></div>
-              <PermissionSelector permissions={selectedPermissions} onToggle={toggleCreatePermission} />
+              <PermissionSelector permissions={selectedPermissions} onToggle={(permission) => setSelectedPermissions((current) => ({ ...current, [permission]: !current[permission] }))} />
             </div>
             {error && <p className="form-error">{error}</p>}
             <div className="form-actions"><button className="button secondary" type="button" onClick={() => { setShowForm(false); resetCreateForm() }}>Cancel</button><button className="button primary" type="submit" disabled={saving}><Save size={17} /> {saving ? 'Creating...' : 'Create user'}</button></div>
@@ -186,6 +188,7 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
 
       <section className="content-card">
         <div className="section-heading"><div><span className="eyebrow">Accounts</span><h2>Application users</h2></div><span className="section-count">{users.length} users</span></div>
+        {error && !showForm && !editingUser && !passwordUser && <p className="form-error">{error}</p>}
         <div className="user-list">
           {users.map((user) => {
             const isSuperadmin = user.role === 'superadmin'
@@ -193,8 +196,8 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
               <article className="user-row expanded-user-row" key={user.id}>
                 <span className="avatar large">{user.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span>
                 <div className="user-main"><strong>{user.name}{user.id === currentUserId ? ' · You' : ''}</strong><span>{user.email}</span><small>{roleName(user.role)}</small></div>
-                <label className="switch-label"><input type="checkbox" checked={user.active} disabled={isSuperadmin} onChange={(event) => updateUser(user.id, { active: event.target.checked })} /><span className="switch" /><em>{user.active ? 'Active' : 'Inactive'}</em></label>
-                <div className="user-row-actions"><button className="button secondary" type="button" onClick={() => setEditingUserId(user.id)}><ShieldCheck size={16} /> Access</button><button className="button secondary" type="button" onClick={() => { setResetPasswordUserId(user.id); setError('') }}><KeyRound size={16} /> Password</button></div>
+                <label className="switch-label"><input type="checkbox" checked={user.active} disabled={isSuperadmin} onChange={(event) => void updateActive(user, event.target.checked)} /><span className="switch" /><em>{user.active ? 'Active' : 'Inactive'}</em></label>
+                <div className="user-row-actions"><button className="button secondary" type="button" onClick={() => { setEditingUserId(user.id); setError('') }}><ShieldCheck size={16} /> Access</button><button className="button secondary" type="button" onClick={() => { setResetPasswordUserId(user.id); setError('') }}><KeyRound size={16} /> Password</button></div>
               </article>
             )
           })}
@@ -204,13 +207,14 @@ export function UsersPage({ users, currentUserId, onUsersChange, onNotify }: Use
 
       {editingUser && <Modal title={`Access for ${editingUser.name}`} onClose={closeAccessModal} wide><div className="access-modal-content">
         {editingUser.role === 'superadmin' ? <p className="locked-access-note">The superadmin always has complete system access and cannot be restricted.</p> : <>
-          <label className="field"><span>Role label</span><select value={editingUser.role} onChange={(event) => updateUser(editingUser.id, { role: event.target.value as Role })}>{assignableRoles.map((item) => <option value={item} key={item}>{roleName(item)}</option>)}</select></label>
-          <div className="modal-permissions"><PermissionSelector permissions={editingUser.permissions} onToggle={toggleExistingPermission} /></div>
+          <label className="field"><span>Role label</span><select value={editingRole} onChange={(event) => setEditingRole(event.target.value as Role)}>{assignableRoles.map((item) => <option value={item} key={item}>{roleName(item)}</option>)}</select></label>
+          <div className="modal-permissions"><PermissionSelector permissions={editingPermissions} onToggle={(permission) => setEditingPermissions((current) => ({ ...current, [permission]: !current[permission] }))} /></div>
         </>}
-        <div className="form-actions"><button className="button primary" type="button" onClick={closeAccessModal}>Done</button></div>
+        {error && <p className="form-error">{error}</p>}
+        <div className="form-actions"><button className="button secondary" type="button" onClick={closeAccessModal}>Cancel</button><button className="button primary" type="button" onClick={() => void saveAccess()} disabled={saving}>{saving ? 'Saving...' : 'Save access'}</button></div>
       </div></Modal>}
 
-      {passwordUser && <Modal title={`Change password for ${passwordUser.name}`} onClose={() => { setResetPasswordUserId(null); setNewPassword(''); setConfirmNewPassword(''); setError('') }}><form className="entry-form" onSubmit={resetPassword}><div className="form-grid"><PasswordFields password={newPassword} confirmPassword={confirmNewPassword} onPasswordChange={setNewPassword} onConfirmPasswordChange={setConfirmNewPassword} /></div>{error && <p className="form-error">{error}</p>}<p className="password-admin-note">The user cannot change this password. Only the superadmin can replace it.</p><div className="form-actions"><button className="button secondary" type="button" onClick={() => setResetPasswordUserId(null)}>Cancel</button><button className="button primary" type="submit" disabled={saving}><KeyRound size={17} /> {saving ? 'Changing...' : 'Change password'}</button></div></form></Modal>}
+      {passwordUser && <Modal title={`Change password for ${passwordUser.name}`} onClose={() => { setResetPasswordUserId(null); setNewPassword(''); setConfirmNewPassword(''); setError('') }}><form className="entry-form" onSubmit={resetPassword}><div className="form-grid"><PasswordFields password={newPassword} confirmPassword={confirmNewPassword} onPasswordChange={setNewPassword} onConfirmPasswordChange={setConfirmNewPassword} /></div>{error && <p className="form-error">{error}</p>}<p className="password-admin-note">The user cannot change this password inside this application. Only the superadmin can replace it.</p><div className="form-actions"><button className="button secondary" type="button" onClick={() => setResetPasswordUserId(null)}>Cancel</button><button className="button primary" type="submit" disabled={saving}><KeyRound size={17} /> {saving ? 'Changing...' : 'Change password'}</button></div></form></Modal>}
     </div>
   )
 }

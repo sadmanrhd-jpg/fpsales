@@ -13,7 +13,7 @@ import {
   UtensilsCrossed,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { printBillReceipt, printKotReceipt } from '../lib/receipt'
+import { preparePrintWindow, printBillReceipt, printKotReceipt } from '../lib/receipt'
 import { formatCurrency } from '../lib/utils'
 import type { MenuCategory, MenuItem, OngoingOrder, OrderLine, PaymentMethod, SalesEntry } from '../types'
 
@@ -28,8 +28,8 @@ interface SalesOrderPageProps {
   canCreateOrder: boolean
   canPrintKot: boolean
   canPrintBill: boolean
-  onCreateOrder: (order: Omit<OngoingOrder, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'status'>) => void
-  onCompleteSale: (sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => void
+  onCreateOrder: (order: Omit<OngoingOrder, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'status'>) => Promise<{ order?: OngoingOrder; error?: string }>
+  onCompleteSale: (sale: Pick<SalesEntry, 'amount' | 'paymentMethod' | 'note' | 'occurredAt'>) => Promise<string | null>
   onNotify: (message: string) => void
 }
 
@@ -87,14 +87,13 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
     setPaymentMethod('Cash')
   }
 
-  const printKot = () => {
+  const printKot = async () => {
     if (!canCreateOrder) return onNotify('You do not have permission to create a sales order.')
     if (!canPrintKot) return onNotify('You do not have permission to print a KOT.')
     if (!cart.length) return onNotify('Add at least one food item before printing the KOT.')
-    const printed = printKotReceipt({ restaurantName, branchName, orderNumber: nextOrderNumber, tableNumber, lines: orderLines })
-    if (!printed) return onNotify('The print window was blocked by the browser.')
-
-    onCreateOrder({
+    const printWindow = preparePrintWindow()
+    if (!printWindow) return onNotify('The print window was blocked by the browser.')
+    const result = await onCreateOrder({
       orderNumber: nextOrderNumber,
       tableNumber,
       lines: orderLines,
@@ -103,24 +102,33 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
       subtotal,
       total,
     })
-    onNotify(`KOT sent. Order #${String(nextOrderNumber).padStart(4, '0')} is now in Orders.`)
+    if (!result.order) {
+      printWindow.close()
+      return onNotify(result.error || 'The order could not be saved.')
+    }
+    printKotReceipt({ restaurantName, branchName, orderNumber: result.order.orderNumber, tableNumber, lines: orderLines }, printWindow)
+    onNotify(`KOT sent. Order #${String(result.order.orderNumber).padStart(4, '0')} is now in Orders.`)
     clearOrder()
   }
 
-  const printBill = () => {
+  const printBill = async () => {
     if (!canCreateOrder) return onNotify('You do not have permission to create a sales order.')
     if (!canPrintBill) return onNotify('You do not have permission to print a bill.')
     if (!cart.length) return onNotify('Add at least one food item before printing the bill.')
-    const printed = printBillReceipt({ restaurantName, branchName, tableNumber, lines: orderLines, currency, paymentMethod, subtotal, discount, total })
-    if (!printed) return onNotify('The print window was blocked by the browser.')
-
+    const printWindow = preparePrintWindow()
+    if (!printWindow) return onNotify('The print window was blocked by the browser.')
     const itemSummary = cart.map((line) => `${line.item.name} x ${line.quantity}`).join(', ')
-    onCompleteSale({
+    const error = await onCompleteSale({
       amount: total,
       paymentMethod,
       note: `${tableNumber}. ${itemSummary}. Subtotal ${formatCurrency(subtotal, currency)}. Discount ${formatCurrency(discount, currency)}.`,
       occurredAt: new Date().toISOString(),
     })
+    if (error) {
+      printWindow.close()
+      return onNotify(error)
+    }
+    printBillReceipt({ restaurantName, branchName, tableNumber, lines: orderLines, currency, paymentMethod, subtotal, discount, total }, printWindow)
     clearOrder()
   }
 
@@ -191,8 +199,8 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
           </div>
 
           <div className="sales-print-actions">
-            <button className="button secondary" type="button" onClick={printKot} disabled={!cart.length || !canCreateOrder || !canPrintKot}><Printer size={18} /> Print KOT</button>
-            <button className="button primary" type="button" onClick={printBill} disabled={!cart.length || !canCreateOrder || !canPrintBill}><ReceiptText size={18} /> Print bill</button>
+            <button className="button secondary" type="button" onClick={() => void printKot()} disabled={!cart.length || !canCreateOrder || !canPrintKot}><Printer size={18} /> Print KOT</button>
+            <button className="button primary" type="button" onClick={() => void printBill()} disabled={!cart.length || !canCreateOrder || !canPrintBill}><ReceiptText size={18} /> Print bill</button>
           </div>
         </aside>
       </section>

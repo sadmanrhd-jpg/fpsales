@@ -51,10 +51,7 @@ export interface AppUser {
   role: Role
   active: boolean
   permissions: UserPermissions
-  passwordSalt: string
-  passwordHash: string
-  deletionPinSalt?: string
-  deletionPinHash?: string
+  hasDeletionPin: boolean
   createdAt: string
 }
 

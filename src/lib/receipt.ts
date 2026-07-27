@@ -8,9 +8,13 @@ const escapeHtml = (value: string) => value
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;')
 
-function openPrintWindow(title: string, body: string) {
-  const printWindow = window.open('', '_blank', 'width=460,height=720')
+export function preparePrintWindow() {
+  return window.open('', '_blank', 'width=460,height=720')
+}
+
+function renderPrintWindow(printWindow: Window | null, title: string, body: string) {
   if (!printWindow) return false
+  printWindow.document.open()
   printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(title)}</title><style>
     body{font-family:Arial,sans-serif;color:#111;padding:22px;margin:0}.receipt{max-width:360px;margin:0 auto}
     h1{font-size:20px;margin:0 0 4px;text-align:center}h2{font-size:14px;margin:0 0 18px;text-align:center;font-weight:400}
@@ -31,9 +35,9 @@ interface KotReceiptInput {
   lines: OrderLine[]
 }
 
-export function printKotReceipt({ restaurantName, branchName, orderNumber, tableNumber, lines }: KotReceiptInput): boolean {
+export function printKotReceipt({ restaurantName, branchName, orderNumber, tableNumber, lines }: KotReceiptInput, preparedWindow?: Window | null): boolean {
   const rows = lines.map((line) => `<tr><td>${escapeHtml(line.name)}</td><td>${line.quantity}</td></tr>`).join('')
-  return openPrintWindow('Kitchen Order Ticket', `
+  return renderPrintWindow(preparedWindow ?? preparePrintWindow(), 'Kitchen Order Ticket', `
     <h1>${escapeHtml(restaurantName)}</h1><h2>${escapeHtml(branchName)} · Kitchen Order Ticket</h2>
     <div class="meta"><strong>Order:</strong> #${String(orderNumber).padStart(4, '0')}<br><strong>Table:</strong> ${escapeHtml(tableNumber)}<br><strong>Order time:</strong> ${escapeHtml(new Date().toLocaleString('en-GB'))}</div>
     <table><thead><tr><th>Food item</th><th>Quantity</th></tr></thead><tbody>${rows}</tbody></table>
@@ -53,10 +57,10 @@ interface BillReceiptInput {
   total: number
 }
 
-export function printBillReceipt({ restaurantName, branchName, orderNumber, tableNumber, lines, currency, paymentMethod, subtotal, discount, total }: BillReceiptInput): boolean {
+export function printBillReceipt({ restaurantName, branchName, orderNumber, tableNumber, lines, currency, paymentMethod, subtotal, discount, total }: BillReceiptInput, preparedWindow?: Window | null): boolean {
   const rows = lines.map((line) => `<tr><td>${escapeHtml(line.name)} × ${line.quantity}</td><td>${escapeHtml(formatCurrency(line.price * line.quantity, currency))}</td></tr>`).join('')
   const orderMeta = orderNumber ? `<strong>Order:</strong> #${String(orderNumber).padStart(4, '0')}<br>` : ''
-  return openPrintWindow('Customer Bill', `
+  return renderPrintWindow(preparedWindow ?? preparePrintWindow(), 'Customer Bill', `
     <h1>${escapeHtml(restaurantName)}</h1><h2>${escapeHtml(branchName)} · Customer Bill</h2>
     <div class="meta">${orderMeta}<strong>Table:</strong> ${escapeHtml(tableNumber)}<br><strong>Date:</strong> ${escapeHtml(new Date().toLocaleString('en-GB'))}<br><strong>Payment:</strong> ${escapeHtml(paymentMethod)}</div>
     <table><thead><tr><th>Food item</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
