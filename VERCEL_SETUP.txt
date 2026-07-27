@@ -1,28 +1,21 @@
-FOOD PAVILION DEPLOYMENT
+FOOD PAVILION VERCEL SETUP
 
-1. Upload this complete folder to your GitHub repository.
+1. Do not run another database SQL or security migration.
 
-2. Open Vercel and import the repository.
+2. Upload this corrected repository to GitHub and replace the previous converted files.
 
-3. Open:
-   Project Settings > Environment Variables
+3. In Vercel open Project Settings, then Environment Variables.
 
-4. Add only this private variable:
+4. Add this private server variable:
+   SUPABASE_SECRET_KEY = your Supabase Secret key
 
-   Name: SUPABASE_SECRET_KEY
-   Value: Copy the Secret key from Supabase Project Settings > API Keys
+5. Select Production, Preview and Development.
 
-   Select Production, Preview and Development.
+6. Redeploy the project.
 
-5. Deploy or redeploy.
+7. Log in with the existing superadmin account.
 
-6. In Supabase SQL Editor, run this file once if your earlier verification did
-   not already enable Row Level Security on every table:
+8. Create users and menu items from the application.
 
-   supabase/migrations/202607260002_server_only_security.sql
-
-7. Open the Vercel website and sign in with the superadmin account.
-
-8. Create users and menu items from inside the application.
-
-DO NOT put the Secret key in GitHub or in a variable beginning with VITE_.
+The Project URL and Publishable key are already configured in src/lib/supabase.ts.
+Never place the Supabase Secret key inside src, GitHub, or a VITE variable.
