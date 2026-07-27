@@ -1,0 +1,11 @@
+BUILD FIX
+
+This repository includes compatibility versions of:
+
+src/lib/auth.ts
+src/lib/storage.ts
+
+They overwrite obsolete browser authentication and local storage files that may
+remain in an existing GitHub repository after uploading a new project version.
+
+Upload the complete repository contents and replace files with the same names.
