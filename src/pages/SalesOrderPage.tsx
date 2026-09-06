@@ -48,6 +48,7 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
   const [tableNumber, setTableNumber] = useState(tableOptions[0])
   const [discountInput, setDiscountInput] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash')
+  const [addToExistingTableSession, setAddToExistingTableSession] = useState(false)
 
   const activeCategories = useMemo(() => categories.filter((category) => category.active), [categories])
   const availableItems = useMemo(() => items.filter((item) => item.available), [items])
@@ -85,6 +86,7 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
     setTableNumber(tableOptions[0])
     setDiscountInput('')
     setPaymentMethod('Cash')
+    setAddToExistingTableSession(false)
   }
 
   const printKot = async () => {
@@ -101,6 +103,7 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
       paymentMethod,
       subtotal,
       total,
+      addToExistingTableSession,
     })
     if (!result.order) {
       printWindow.close()
@@ -177,6 +180,8 @@ export function SalesOrderPage({ categories, items, currency, restaurantName, br
           <div className="sales-summary-header"><div><span className="eyebrow">Current order</span><h2>Bill summary</h2></div><button className="icon-button" type="button" onClick={clearOrder} disabled={!cart.length || !canCreateOrder} title="Clear order"><Trash2 size={18} /></button></div>
 
           <label className="field sales-table-selector"><span>Table</span><select value={tableNumber} onChange={(event) => setTableNumber(event.target.value)} disabled={!canCreateOrder}>{tableOptions.map((table) => <option value={table} key={table}>{table}</option>)}</select></label>
+
+          <label className="field"><span><input type="checkbox" checked={addToExistingTableSession} onChange={(event) => setAddToExistingTableSession(event.target.checked)} disabled={!canCreateOrder} /> Add to existing table order session</span></label>
 
           <div className="sales-cart-lines">
             {!cart.length ? <div className="sales-cart-empty"><ShoppingBag size={27} /><strong>No food selected</strong><span>Choose an item from the menu to start an order.</span></div> : cart.map((line, index) => <div className="sales-cart-line" key={line.item.id}>

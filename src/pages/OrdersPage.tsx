@@ -22,6 +22,17 @@ const tableOptions = Array.from({ length: 20 }, (_, index) => `Table ${String(in
 export function OrdersPage({ orders, currency, restaurantName, branchName, canEdit, canPrintKot, canPrintBill, onUpdateOrder, onCompleteOrder, onNotify }: OrdersPageProps) {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(() => orders[0]?.id ?? null)
   const selectedOrder = useMemo(() => orders.find((order) => order.id === selectedOrderId) ?? null, [orders, selectedOrderId])
+  const tableSessions = useMemo(() => {
+    const groups = new Map<string, { tableNumber: string; orders: OngoingOrder[]; total: number }>()
+    orders.forEach((order) => {
+      const key = order.tableSessionId || `legacy:${order.id}`
+      const existing = groups.get(key) || { tableNumber: order.tableNumber, orders: [], total: 0 }
+      existing.orders.push(order)
+      existing.total += order.total
+      groups.set(key, existing)
+    })
+    return Array.from(groups.values())
+  }, [orders])
 
   useEffect(() => {
     if (!orders.length) {
@@ -110,13 +121,16 @@ export function OrdersPage({ orders, currency, restaurantName, branchName, canEd
 
       {!orders.length ? <section className="content-card orders-empty-state"><ShoppingBag size={34} /><h2>No ongoing orders</h2><p>Orders appear here after Print KOT is used on the Sales page.</p></section> : <section className="orders-layout">
         <div className="orders-card-panel">
-          <div className="orders-card-grid">
-            {orders.map((order) => <button type="button" className={`ongoing-order-card ${selectedOrderId === order.id ? 'active' : ''}`} key={order.id} onClick={() => setSelectedOrderId(order.id)}>
-              <div className="ongoing-order-card-top"><span>Order #{String(order.orderNumber).padStart(4, '0')}</span><strong>{order.tableNumber}</strong></div>
-              <div className="ongoing-order-bill"><small>Bill</small><strong>{formatCurrency(order.total, currency)}</strong></div>
-              <div className="ongoing-order-card-bottom"><span><ClipboardCheck size={15} /> {order.status}</span><time><Clock3 size={14} /> {new Date(order.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</time></div>
-            </button>)}
-          </div>
+          {tableSessions.map((session) => <section className="content-card" key={`${session.tableNumber}-${session.orders.map((item) => item.id).join('-')}`}>
+            <div className="ongoing-order-card-top"><span>{session.tableNumber} session</span><strong>{formatCurrency(session.total, currency)}</strong></div>
+            <div className="orders-card-grid">
+              {session.orders.map((order) => <button type="button" className={`ongoing-order-card ${selectedOrderId === order.id ? 'active' : ''}`} key={order.id} onClick={() => setSelectedOrderId(order.id)}>
+                <div className="ongoing-order-card-top"><span>Order #{String(order.orderNumber).padStart(4, '0')}</span><strong>{order.tableNumber}</strong></div>
+                <div className="ongoing-order-bill"><small>Bill</small><strong>{formatCurrency(order.total, currency)}</strong></div>
+                <div className="ongoing-order-card-bottom"><span><ClipboardCheck size={15} /> {order.status}</span><time><Clock3 size={14} /> {new Date(order.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</time></div>
+              </button>)}
+            </div>
+          </section>)}
         </div>
 
         {selectedOrder && <aside className="sales-summary-card orders-summary-card">
