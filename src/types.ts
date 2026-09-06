@@ -134,7 +134,6 @@ export interface OngoingOrder {
   subtotal: number
   total: number
   status: 'KOT sent'
-  tableSessionId?: string
   createdAt: string
   updatedAt: string
   createdBy: string

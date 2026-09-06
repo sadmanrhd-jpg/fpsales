@@ -405,7 +405,6 @@ async function bootstrap(admin: any, actor: any) {
       subtotal: Number(row.subtotal),
       total: Number(row.total_amount),
       status: 'KOT sent',
-      tableSessionId: row.table_session_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       createdBy: row.created_by,
@@ -712,21 +711,10 @@ async function handleAction(admin: any, db: any, actor: any, action: string, pay
     const lines = Array.isArray(payload.lines) ? payload.lines : []
     if (!lines.length) throw new Error('Add at least one food item.')
     const table = await resolveTable(admin, branchId, payload.tableNumber)
-    let tableSessionId = null
-    if (payload.addToExistingTableSession) {
-      const { data: latestSessionOrder } = await admin.from('orders').select('table_session_id').eq('branch_id', branchId).eq('table_id', table.id).in('status', ['draft', 'kot_sent']).not('table_session_id', 'is', null).order('created_at', { ascending: false }).limit(1).maybeSingle()
-      tableSessionId = latestSessionOrder?.table_session_id || null
-    }
-    if (!tableSessionId) {
-      const { data: session, error: sessionError } = await admin.from('table_order_sessions').insert({ branch_id: branchId, table_id: table.id, status: 'open', created_by: actor.profile.id }).select('*').single()
-      if (sessionError) throw new Error(sessionError.message)
-      tableSessionId = session.id
-    }
     const { data: order, error: orderError } = await admin.from('orders').insert({
       organisation_id: organisationId,
       branch_id: branchId,
       table_id: table.id,
-      table_session_id: tableSessionId,
       status: 'kot_sent',
       payment_method: payload.paymentMethod || 'Cash',
       subtotal: Number(payload.subtotal),
@@ -767,7 +755,6 @@ async function handleAction(admin: any, db: any, actor: any, action: string, pay
       createdAt: order.created_at,
       updatedAt: order.updated_at,
       createdBy: actor.profile.id,
-      tableSessionId,
     }
   }
 
